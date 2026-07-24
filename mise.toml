@@ -1,0 +1,14 @@
+[tools]
+node = "lts"
+
+[tasks.format]
+description = "Format Markdown files"
+run = "npx --yes prettier --write --prose-wrap always --print-width 80 \"**/*.md\""
+
+[tasks.lint]
+description = "Lint Markdown files"
+run = "npx --yes markdownlint-cli2 \"**/*.md\""
+
+[tasks.check]
+description = "Run all checks"
+depends = ["lint"]
