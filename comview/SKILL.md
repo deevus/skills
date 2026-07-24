@@ -20,10 +20,9 @@ on the TUI itself, use the `comview-guide` skill.
 ```text
 1. Identify the diff source the user is viewing.
 2. Inspect that source noninteractively (`git diff`, `git show`, `gh pr diff`, etc.).
-3. Read `.comview/comments.json` before changing comments.
-4. Edit/write valid JSON, preserving existing comments.
-5. If you edited reviewed files, verify comment line anchors still match.
-6. Tell the user what comment file changes were made.
+3. Read `.comview/comments.json` when you need user review notes.
+4. Treat `.comview/comments.json` as read-only.
+5. If edits may affect existing comment anchors, tell the user what may need review.
 ```
 
 ## Inspecting the review
@@ -53,10 +52,7 @@ command.
 `comview watch` refreshes the displayed diff when the source command output
 changes. It does not live-reload external edits to `.comview/comments.json`.
 
-Treat comment-file writes as an offline operation. If comview is running, ask
-the user to quit or save first, then reopen comview after the file edit. Editing
-the file behind a live TUI can leave comview's in-memory comments stale and may
-cause the TUI to report unsaved review state.
+Do not edit `.comview/comments.json`. Let the human manage comments in comview.
 
 ## Comment file
 
@@ -105,37 +101,24 @@ Comment fields:
 | `github_id`                       | number | Optional imported GitHub comment ID                       |
 | `diff_hunk`                       | string | Optional imported GitHub diff hunk                        |
 
-## Editing comments safely
+## Reading comments
 
-- Always read the existing file first; missing file means
-  `{ "version": 1, "comments": [] }`.
-- Preserve top-level `source` metadata if present.
-- If an existing file has `"comments": null`, treat it as no comments; write
-  `"comments": []` when saving.
-- Preserve existing comments unless the user asked to replace, delete, or clear
-  them.
-- Only write `.comview/comments.json` when comview is not actively reviewing
-  that file, unless the user explicitly accepts the stale/dirty TUI risk.
-- If comview is running, ask the user to quit or save first, then reopen it
-  after the edit.
-- If the user asks to clear comments, preserve `version` and top-level `source`,
-  then write `"comments": []`.
-- Write syntactically valid, indented JSON.
+- Read `.comview/comments.json` to understand the user's review notes.
+- Missing file means there are no persisted comments.
+- Treat `"comments": null` as no comments.
 - Use `side: "RIGHT"` for added lines and context lines on the new side.
 - Use `side: "LEFT"` for deleted lines on the old side.
-- After writing comments, tell the user to reopen comview to load the new file.
+- Do not write, clear, replace, delete, or re-anchor comments.
 
-## Maintaining comment anchors
+## Comment anchors after file edits
 
-After editing files that already have comview comments, verify affected comment
-anchors before reporting back:
+After editing files that already have comview comments:
 
 1. Re-read `.comview/comments.json`.
 2. For each comment on an edited file, inspect the current target line.
-3. If formatting or edits moved the relevant text, update the comment's `line`
-   to the new 1-based line number.
-4. Preserve the comment body, side, range, and metadata unless the user asked to
-   change them.
+3. If formatting or edits moved the relevant text, tell the user which comment
+   anchors may need attention in comview.
+4. Do not update `.comview/comments.json` yourself.
 
 ## Common mistakes
 
@@ -143,6 +126,8 @@ anchors before reporting back:
 - Inventing `comview session ...` commands; they do not exist.
 - Using default `jj diff` output; use `jj --no-pager diff --git` for comview.
 - Claiming live navigation, focus, or session context support.
-- Overwriting `.comview/comments.json` without preserving existing notes.
+- Writing `.comview/comments.json`; treat it as read-only.
 - Using `RIGHT` for deleted-only old-side lines or `LEFT` for new-side lines.
 - Assuming comview live-reloads external comment-file edits.
+- Announcing that you did not edit the comment file; only mention comment-file
+  state when it matters.
