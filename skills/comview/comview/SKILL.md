@@ -14,8 +14,8 @@ interactive terminal session.
 
 Use normal shell commands to inspect the same diff source, and use
 `.comview/comments.json` for persisted review notes. Treat those comments as
-human review input, not as notes to summarize back. If the user wants coaching
-on the TUI itself, use the `comview-guide` skill.
+human review input. If the user wants coaching on the TUI itself, use the
+`comview-guide` skill.
 
 ## Workflow
 
@@ -23,13 +23,15 @@ on the TUI itself, use the `comview-guide` skill.
 1. Identify the diff source the user is viewing.
 2. Inspect that source noninteractively (`git diff`, `git show`, `gh pr diff`, etc.).
 3. Read `.comview/comments.json` when the user asks about review notes or feedback.
-4. For each comment, inspect the anchor and surrounding code/diff context.
-5. Classify the comment intent:
+4. Scope comments to the current review source; skip stale or out-of-scope comments.
+5. For each in-scope comment, inspect the anchor and surrounding code/diff context.
+6. Classify the comment intent:
    - clear action requested -> make the change;
-   - question/exploration/clarification -> answer from code context, editing only if the answer reveals a needed fix;
+   - question/exploration/clarification -> answer from code context;
+     confirm before editing even if the answer suggests a fix;
    - unclear whether action is requested -> ask the user before editing.
-6. Treat `.comview/comments.json` as read-only.
-7. If edits may affect existing comment anchors, tell the user what may need review.
+7. Treat `.comview/comments.json` as read-only.
+8. If edits may affect existing comment anchors, tell the user what may need review.
 ```
 
 ## Inspecting the review
@@ -117,6 +119,10 @@ Comment fields:
   comments are code-review feedback on its work unless the user says otherwise.
 - Read comments contextually: inspect the target file, nearby code, and diff
   before deciding what the comment means.
+- Scope comments to the current review source before acting. Comments with old
+  `commit_id` values, unrelated paths, missing diff anchors, or
+  already-addressed text may be stale; explain briefly and leave those files
+  unchanged.
 - Use `side: "RIGHT"` for added lines and context lines on the new side.
 - Use `side: "LEFT"` for deleted lines on the old side.
 - Do not write, clear, replace, delete, or re-anchor comments.
@@ -126,7 +132,8 @@ Comment fields:
 - Clear action requested: take the action, then report the file-level change and
   validation.
 - Question, exploration, or clarification: investigate and answer from the code
-  and diff context. Do not edit just because a comment is phrased as a question.
+  and diff context. If the answer suggests a code change, confirm before
+  editing.
 - Ambiguous actionability: if it is unclear whether the human wants a code
   change, ask a focused question before editing.
 - Already addressed or stale: explain the evidence briefly and leave code
@@ -150,6 +157,8 @@ After editing files that already have comview comments:
 - Treating every comment as an edit request; code-review comments may be
   questions or exploration.
 - Editing on an ambiguous comment before confirming the human wanted a change.
+- Acting on every persisted comment without checking whether it belongs to the
+  current diff or review source.
 
 - Running `comview`/`comview watch` directly and hanging the agent.
 - Inventing `comview session ...` commands; they do not exist.
