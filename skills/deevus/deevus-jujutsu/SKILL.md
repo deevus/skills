@@ -20,6 +20,8 @@ For any follow-up change on a branch, reviewed or not:
 jj new -m "<message>"
 # edit files
 jj bookmark move <bookmark> --to @
+jj git push --dry-run -b <bookmark>
+# only if dry-run does NOT say "move sideways"
 jj git push -b <bookmark>
 ```
 
@@ -32,14 +34,14 @@ When `@` is the bookmark commit, editing files amends that commit silently.
 Amending is jj's default behaviour, so the next push is a sideways/force push
 unless the remote already points at the rewritten commit.
 
-The tell is push output like:
+The tell is dry-run output like:
 
 ```text
 move sideways from X to Y
 ```
 
-That is a force push. If it was not explicitly requested, recover before doing
-anything else:
+That is a force push. If a dry-run shows this and it was not explicitly
+requested, do not run the real push. Recover before doing anything else:
 
 ```bash
 jj undo
@@ -47,7 +49,7 @@ jj st
 jj --no-pager bookmark list
 ```
 
-Then recreate the follow-up as a child commit before pushing again.
+Then recreate the follow-up as a child commit before dry-running the push again.
 
 ## Before pushing an open PR
 
@@ -58,6 +60,8 @@ commit before pushing:
 jj new -m "<message>"
 # edit files
 jj bookmark move <bookmark> --to @
+jj git push --dry-run -b <bookmark>
+# only if dry-run does NOT say "move sideways"
 jj git push -b <bookmark>
 ```
 
@@ -67,8 +71,12 @@ GitHub example for checking review state:
 gh pr view <number> --json reviews
 ```
 
-If the push prints `move sideways from X to Y`, use the `jj undo` recovery
-above.
+If the dry-run prints `move sideways from X to Y`, use the `jj undo` recovery
+above instead of pushing.
+
+Do not try to pass Git flags such as `--no-force` through `jj git push -o`.
+`-o/--option` sends Git push options to the remote server; it does not make jj
+fast-forward-only.
 
 ## Rebasing
 
@@ -95,7 +103,8 @@ Do not rewrite whole files to resolve conflicts.
 
 - Following generic jj "commits are mutable" advice on a pushed bookmark.
 - Editing the bookmark commit directly, then treating the push as routine.
-- Missing `move sideways from X to Y` in push output.
+- Skipping `jj git push --dry-run` before a real push.
+- Missing `move sideways from X to Y` in dry-run output.
 - Checking review state after pushing instead of before pushing.
 - Using git checkout/rebase in a jj-backed repo.
 - Replacing whole conflicted files instead of editing only conflict regions.
