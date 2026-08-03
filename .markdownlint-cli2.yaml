@@ -1,3 +1,6 @@
+ignores:
+  - ".pi-subagents/**"
+
 config:
   MD013:
     line_length: 80
