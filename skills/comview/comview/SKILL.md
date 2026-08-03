@@ -2,7 +2,8 @@
 name: comview
 description:
   Use when the user has comview open, wants agent-side comview review support,
-  or asks the agent to prepare, read, or manage comview review comments.
+  or asks the agent to prepare, read, manage, or respond to comview review
+  comments.
 ---
 
 # Comview Review
@@ -12,7 +13,8 @@ Comview is an interactive terminal diff viewer managed by the human. Do not run
 interactive terminal session.
 
 Use normal shell commands to inspect the same diff source, and use
-`.comview/comments.json` for persisted review notes. If the user wants coaching
+`.comview/comments.json` for persisted review notes. Treat those comments as
+human review input, not as notes to summarize back. If the user wants coaching
 on the TUI itself, use the `comview-guide` skill.
 
 ## Workflow
@@ -20,9 +22,14 @@ on the TUI itself, use the `comview-guide` skill.
 ```text
 1. Identify the diff source the user is viewing.
 2. Inspect that source noninteractively (`git diff`, `git show`, `gh pr diff`, etc.).
-3. Read `.comview/comments.json` when you need user review notes.
-4. Treat `.comview/comments.json` as read-only.
-5. If edits may affect existing comment anchors, tell the user what may need review.
+3. Read `.comview/comments.json` when the user asks about review notes or feedback.
+4. For each comment, inspect the anchor and surrounding code/diff context.
+5. Classify the comment intent:
+   - clear action requested -> make the change;
+   - question/exploration/clarification -> answer from code context, editing only if the answer reveals a needed fix;
+   - unclear whether action is requested -> ask the user before editing.
+6. Treat `.comview/comments.json` as read-only.
+7. If edits may affect existing comment anchors, tell the user what may need review.
 ```
 
 ## Inspecting the review
@@ -82,7 +89,7 @@ Top-level fields:
 
 | Field      | Type   | Values/meaning                                      |
 | ---------- | ------ | --------------------------------------------------- |
-| `version`  | number | Use `1` when writing files                          |
+| `version`  | number | Comment file format version, usually `1`            |
 | `source`   | object | Optional source metadata; preserve if already there |
 | `comments` | array  | Comment objects; use `[]` for no comments           |
 
@@ -106,9 +113,26 @@ Comment fields:
 - Read `.comview/comments.json` to understand the user's review notes.
 - Missing file means there are no persisted comments.
 - Treat `"comments": null` as no comments.
+- If the agent implemented the feature or is working after review, assume the
+  comments are code-review feedback on its work unless the user says otherwise.
+- Read comments contextually: inspect the target file, nearby code, and diff
+  before deciding what the comment means.
 - Use `side: "RIGHT"` for added lines and context lines on the new side.
 - Use `side: "LEFT"` for deleted lines on the old side.
 - Do not write, clear, replace, delete, or re-anchor comments.
+
+## Responding to comments
+
+- Clear action requested: take the action, then report the file-level change and
+  validation.
+- Question, exploration, or clarification: investigate and answer from the code
+  and diff context. Do not edit just because a comment is phrased as a question.
+- Ambiguous actionability: if it is unclear whether the human wants a code
+  change, ask a focused question before editing.
+- Already addressed or stale: explain the evidence briefly and leave code
+  unchanged.
+- Do not merely present comments back to the user. For each substantive comment,
+  either act, answer with evidence, or ask what decision the human wants.
 
 ## Comment anchors after file edits
 
@@ -121,6 +145,11 @@ After editing files that already have comview comments:
 4. Do not update `.comview/comments.json` yourself.
 
 ## Common mistakes
+
+- Listing comments back to the user without doing anything with them.
+- Treating every comment as an edit request; code-review comments may be
+  questions or exploration.
+- Editing on an ambiguous comment before confirming the human wanted a change.
 
 - Running `comview`/`comview watch` directly and hanging the agent.
 - Inventing `comview session ...` commands; they do not exist.
