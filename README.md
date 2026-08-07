@@ -23,6 +23,9 @@ artifacts.
 Writing skills help agents edit technical prose, documentation, and
 human-facing copy.
 
+- `ste-plain-writing` is vendored from
+  [Ryuketsukami/ste-plain-writing](https://github.com/Ryuketsukami/ste-plain-writing).
+
 ### Deevus
 
 Deevus skills encode my personal workflows. They are useful to copy or adapt,
