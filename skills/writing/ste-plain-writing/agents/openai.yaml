@@ -1,0 +1,4 @@
+interface:
+  display_name: "STE Plain Writing"
+  short_description: "Remove AI slop from technical prose"
+  default_prompt: "Use $ste-plain-writing to rewrite this technical draft in clear, concise plain English."

@@ -18,6 +18,11 @@ viewer for reviewing code and writing local review comments.
 Code review skills help agents understand and explain diffs, PRs, and review
 artifacts.
 
+### Writing
+
+Writing skills help agents edit technical prose, documentation, and
+human-facing copy.
+
 ### Deevus
 
 Deevus skills encode my personal workflows. They are useful to copy or adapt,

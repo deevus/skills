@@ -1,5 +1,6 @@
 ignores:
   - ".pi-subagents/**"
+  - "skills/writing/ste-plain-writing/**"
 
 config:
   MD013:
