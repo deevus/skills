@@ -18,9 +18,6 @@ viewer for reviewing code and writing local review comments.
 Code review skills help agents understand and explain diffs, PRs, and review
 artifacts.
 
-- `summarizing-pr-diffs` — summarize PR bodies and diffs, identify stale PR
-  body claims, and turn core behavior into plain-language pseudocode.
-
 ### Deevus
 
 Deevus skills encode my personal workflows. They are useful to copy or adapt,
@@ -36,12 +33,15 @@ npx skills@latest add deevus/skills
 
 ## Install with APM
 
+Install the whole repo with `npx skills add` when possible. For APM, install only
+the skill paths you want:
+
 ```bash
-apm install deevus/skills/skills/comview/comview deevus/skills/skills/comview/comview-guide deevus/skills/skills/code-review/summarizing-pr-diffs deevus/skills/skills/deevus/deevus-jujutsu
+apm install deevus/skills/skills/<namespace>/<skill>
 ```
 
 If APM cannot infer a target runtime, specify one:
 
 ```bash
-apm install --target agent-skills deevus/skills/skills/comview/comview deevus/skills/skills/comview/comview-guide deevus/skills/skills/code-review/summarizing-pr-diffs deevus/skills/skills/deevus/deevus-jujutsu
+apm install --target agent-skills deevus/skills/skills/<namespace>/<skill>
 ```

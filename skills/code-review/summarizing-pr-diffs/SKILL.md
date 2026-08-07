@@ -27,8 +27,6 @@ polished summary.
    say so briefly.
 5. Summarize the change by cause and effect, not by hunk order.
 6. Add pseudocode when it clarifies the behavior or decision rule.
-7. If you write a draft file, run the `ste-plain-writing` linter and fix
-   meaningful findings.
 
 ## Output Contract
 
@@ -102,11 +100,11 @@ return timeout_count + error_count  # unchanged caller contract
 For docs or policy changes, write decision functions:
 
 ```text
-function choose_scheduler(change):
-    if anything_outside_app_must_be_ordered_relative_to_it:
-        return DAGSTER
-    if deployed_app_needs_only_self_contained_cron:
-        return MODAL_SCHEDULE
+function choose_rollout(change):
+    if change.touches_payments or change.touches_auth:
+        return manual_approval_then_gradual_rollout
+    if change.is_config_only and change.has_fast_rollback:
+        return automatic_rollout
 ```
 
 Name injected dependencies and side effects. Do not invent branches that the
@@ -131,4 +129,3 @@ body or diff does not support.
 - [ ] Consequential details kept; hunk tour cut.
 - [ ] Body/diff mismatch called out or omitted because none exists.
 - [ ] Pseudocode included when it clarifies behavior.
-- [ ] STE linter run when a draft file exists.
