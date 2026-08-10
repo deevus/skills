@@ -20,11 +20,20 @@ artifacts.
 
 ### Writing
 
-Writing skills help agents edit technical prose, documentation, and
-human-facing copy.
+Writing skills help agents edit technical prose, documentation, and human-facing
+copy.
 
 - `ste-plain-writing` is vendored from
   [Ryuketsukami/ste-plain-writing](https://github.com/Ryuketsukami/ste-plain-writing).
+
+### Development
+
+Development skills capture reusable coding workflows.
+
+- `bench` — create isolated task or review benches with a harness and diff
+  watcher.
+- `bench-supacode` — Supacode UI mechanics for benches.
+- `bench-herdr` — Herdr UI mechanics for benches.
 
 ### Deevus
 
@@ -41,8 +50,8 @@ npx skills@latest add deevus/skills
 
 ## Install with APM
 
-Install the whole repo with `npx skills add` when possible. For APM, install only
-the skill paths you want:
+Install the whole repo with `npx skills add` when possible. For APM, install
+only the skill paths you want:
 
 ```bash
 apm install deevus/skills/skills/<namespace>/<skill>
