@@ -40,8 +40,8 @@ out of this generic workflow.
    / the repo's native workflow for git. Do not copy a checkout. Do not use UI
    worktree helpers that copy VCS metadata.
 3. **Clear stale registrations.** For jj, check `jj --no-pager workspace list`;
-   if Simon removed a workspace dir without `jj workspace forget`, forget the
-   dangling workspace before recreating it.
+   if the workspace directory was removed without `jj workspace forget`, forget
+   the dangling workspace before recreating it.
 4. **Verify metadata.** Confirm the new root has expected VCS metadata (`.jj`
    for jj workspaces, `.git` for git worktrees) and no stray copied metadata.
 5. **Symlink local config.** Symlink, never copy, VCS-excluded local config from
