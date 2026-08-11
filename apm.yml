@@ -1,0 +1,6 @@
+name: deevus-skills
+version: 0.1.0
+description: Agent skills for development workflows, code review, comview, benching, and writing.
+dependencies:
+  apm: []
+  mcp: []

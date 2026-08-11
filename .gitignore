@@ -1,2 +1,5 @@
 .comview/
 .pi-subagents/
+apm_modules/
+.agents/
+.claude/

@@ -50,15 +50,24 @@ npx skills@latest add deevus/skills
 
 ## Install with APM
 
-Install the whole repo with `npx skills add` when possible. For APM, install
-only the skill paths you want:
+Install the whole skill bundle from the repo root. The consuming project chooses
+the target runtime, such as `agent-skills` or `claude`.
 
 ```bash
-apm install deevus/skills/skills/<namespace>/<skill>
+apm install deevus/skills --target agent-skills
 ```
 
-If APM cannot infer a target runtime, specify one:
+To verify a fresh consumer install:
 
 ```bash
-apm install --target agent-skills deevus/skills/skills/<namespace>/<skill>
+tmp=$(mktemp -d)
+cd "$tmp"
+apm init -y --target agent-skills
+apm install /path/to/deevus/skills --target agent-skills
+apm install --frozen
+find .agents/skills -name SKILL.md | sort
 ```
+
+Expected skill names include `bench`, `bench-herdr`, `bench-supacode`,
+`comview`, `comview-guide`, `deevus-jujutsu`, `ste-plain-writing`, and
+`summarizing-pr-diffs`.
