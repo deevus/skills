@@ -34,8 +34,13 @@ out of this generic workflow.
 ## Generic sequence
 
 1. **Fetch first.** From the source repo, run `jj git fetch` for jj or
-   `git fetch` for git before creating the bench. Report the resolved base
-   revision.
+   `git fetch` for git before creating the bench, then report the resolved base
+   revision. Do this every time: a bench cut from a stale trunk shows up later
+   as a rebase conflict or a PR against an old base. In jj this leaves other
+   workspaces' working copies stale and can rebase their commits; repair with
+   `jj workspace update-stale` in the affected workspace, and re-verify any
+   review bench's diff afterwards. Pay that cost rather than skipping the fetch,
+   and say so when a repo has many workspaces.
 2. **Use native VCS isolation.** Use `jj workspace add` for jj or `git worktree`
    / the repo's native workflow for git. Do not copy a checkout. Do not use UI
    worktree helpers that copy VCS metadata.

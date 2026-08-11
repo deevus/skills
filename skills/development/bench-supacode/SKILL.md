@@ -57,8 +57,11 @@ supacode tab close -w <WT> -t <IDLE_DEFAULT_TAB>
 supacode tab focus -w <WT> -t <WORK_TAB>
 ```
 
-Identify the idle default by listing tabs/surfaces. The default shell is a bare
-zsh; tabs created with `-i` run the harness or watcher.
+Identify the idle default structurally: a tab created with `-i` has surface id
+== tab id, while the idle default's surface id differs from its tab id. Run
+`supacode surface list -w <WT> -t <TAB>` for each tab and close the one whose
+surface id does not match. Its process is also a bare `-/bin/zsh`, but the id
+comparison is quicker and does not need process inspection.
 
 ## Harness launch constraint
 
