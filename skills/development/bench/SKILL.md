@@ -37,10 +37,12 @@ and viewer-specific brief text.
 1. Pick a stable handoff brief path outside the workspace.
 2. Write an initial brief from the request, ticket, or PR metadata only. Do not
    scout the codebase for the harness.
-3. Run the resolver from the source repository:
+3. Resolve `scripts/resolve_bench_config.py` relative to the loaded `bench`
+   skill directory. Run that installed resolver while passing the source
+   repository with `--repo-root`:
 
    ```bash
-   python3 skills/development/bench/scripts/resolve_bench_config.py \
+   python3 <bench-skill-dir>/scripts/resolve_bench_config.py \
      --repo-root /path/to/source-repo \
      --brief /tmp/bench-brief.md
    ```

@@ -46,10 +46,10 @@ comview watch -- jj --no-pager diff --git --from 'fork_point(trunk() | @)' --to 
 For a Git task bench, calculate the merge base at launch time:
 
 ```bash
-comview watch -- bash -lc 'git diff "$(git merge-base main HEAD)" --'
+comview watch -- bash -lc 'base=$(git merge-base "$1" HEAD) || exit; git diff "$base" --' _ main
 ```
 
-Substitute the configured Git base branch for `main`.
+Substitute the configured Git base branch for the positional `main` argument.
 
 ## Review bench ranges
 
@@ -63,11 +63,11 @@ comview watch -- jj --no-pager diff --git --from 'trunk()' --to @
 For a Git review bench, use the remote PR base when available:
 
 ```bash
-comview watch -- bash -lc 'git diff "$(git merge-base origin/main HEAD)" --'
+comview watch -- bash -lc 'base=$(git merge-base "$1" HEAD) || exit; git diff "$base" --' _ origin/main
 ```
 
-Substitute the verified remote base for `origin/main`. Do not rebase or mutate
-the reviewed branch to make the range easier.
+Substitute the verified remote base for the positional `origin/main` argument.
+Do not rebase or mutate the reviewed branch to make the range easier.
 
 ## Stack ranges
 
@@ -84,7 +84,7 @@ Examples:
 
 ```bash
 comview watch -- jj --no-pager diff --git --from @- --to @
-comview watch -- bash -lc 'git diff HEAD^ --'
+comview watch -- git diff HEAD^ --
 ```
 
 If the stack base is ambiguous, stop and ask `bench` to get a decision before
@@ -96,10 +96,17 @@ Append path filters only after the range is correct:
 
 ```bash
 comview watch -- jj --no-pager diff --git --from 'trunk()' --to @ -- src tests
-comview watch -- bash -lc 'git diff "$(git merge-base origin/main HEAD)" -- src tests'
+comview watch -- bash -lc 'base=$(git merge-base "$1" HEAD) || exit; shift; git diff "$base" -- "$@"' _ origin/main src tests
 ```
 
-Keep paths literal. Do not build a command from untrusted text.
+Keep range arguments and path arguments separate. For Jujutsu, paths are argv
+items after `--`. For Git, keep the shell snippet fixed: pass the base as `$1`,
+then `shift` so paths flow through `"$@"` after Git's `--` path separator.
+
+The companion command is a string for the UI layer. When that string contains
+dynamic argv values such as branches, revsets, or paths, serialize the argv list
+with each value shell-quoted as one argument, for example with Python's
+`shlex.join(argv)`. Never concatenate untrusted text into the command string.
 
 ## Brief additions
 

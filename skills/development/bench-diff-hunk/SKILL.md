@@ -59,10 +59,10 @@ hunk diff 'fork_point(trunk() | @)..@' --watch
 For a Git task bench, calculate the merge base at launch time:
 
 ```bash
-bash -lc 'hunk diff "$(git merge-base main HEAD)" --watch'
+bash -lc 'base=$(git merge-base "$1" HEAD) || exit; hunk diff "$base" --watch' _ main
 ```
 
-Substitute the configured Git base branch for `main`.
+Substitute the configured Git base branch for the positional `main` argument.
 
 ## Review bench ranges
 
@@ -76,11 +76,11 @@ hunk diff 'trunk()..@' --watch
 For a Git review bench, use the remote PR base when available:
 
 ```bash
-bash -lc 'hunk diff "$(git merge-base origin/main HEAD)" --watch'
+bash -lc 'base=$(git merge-base "$1" HEAD) || exit; hunk diff "$base" --watch' _ origin/main
 ```
 
-Substitute the verified remote base for `origin/main`. Do not rebase or mutate
-the reviewed branch to make the range easier.
+Substitute the verified remote base for the positional `origin/main` argument.
+Do not rebase or mutate the reviewed branch to make the range easier.
 
 ## Stack ranges
 
@@ -109,10 +109,17 @@ Append path filters only after the range is correct:
 
 ```bash
 hunk diff 'trunk()..@' --watch -- src tests
-bash -lc 'hunk diff "$(git merge-base origin/main HEAD)" --watch -- src tests'
+bash -lc 'base=$(git merge-base "$1" HEAD) || exit; shift; hunk diff "$base" --watch -- "$@"' _ origin/main src tests
 ```
 
-Keep paths literal. Do not build a command from untrusted text.
+Keep range arguments and path arguments separate. For Jujutsu, paths are argv
+items after `--`. For Git, keep the shell snippet fixed: pass the base as `$1`,
+then `shift` so paths flow through `"$@"` after Hunk's `--` path separator.
+
+The companion command is a string for the UI layer. When that string contains
+dynamic argv values such as branches, revsets, or paths, serialize the argv list
+with each value shell-quoted as one argument, for example with Python's
+`shlex.join(argv)`. Never concatenate untrusted text into the command string.
 
 ## Brief additions
 

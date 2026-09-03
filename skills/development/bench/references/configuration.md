@@ -6,8 +6,12 @@ argv; UI skills must pass the returned argv without rebuilding it.
 
 ## Resolver command
 
+Resolve `scripts/resolve_bench_config.py` relative to the loaded `bench` skill
+installation, not relative to the source repository. Pass the source repository
+with `--repo-root`:
+
 ```bash
-python3 skills/development/bench/scripts/resolve_bench_config.py \
+python3 <bench-skill-dir>/scripts/resolve_bench_config.py \
   --repo-root /path/to/source-repo \
   --brief /tmp/bench-brief.md
 ```
