@@ -33,6 +33,7 @@ BENCH_PATH="<bench-path>" # --path, e.g. /Users/me/Projects/project-task-123
 SHORT_TITLE="<short title>" # --title, e.g. "TASK-123 · parser fix"
 COLOUR="<colour>" # --color, e.g. blue
 DIFF_COMMAND="<watcher>" # --diff-command, e.g. comview watch -- git diff main...HEAD
+PIN_ARGS=() # Optional --pin; use PIN_ARGS=(--pin) to pin the new worktree.
 HARNESS=(claude --permission-mode plan "Read <brief>, then plan before edits.") # after --
 
 python3 <bench-supacode-skill-dir>/scripts/setup_bench.py \
@@ -40,6 +41,7 @@ python3 <bench-supacode-skill-dir>/scripts/setup_bench.py \
   --title "$SHORT_TITLE" \
   --color "$COLOUR" \
   --diff-command "$DIFF_COMMAND" \
+  "${PIN_ARGS[@]}" \
   -- "${HARNESS[@]}"
 ```
 
@@ -51,14 +53,16 @@ Use the task record for the short title and the project's established colour
 convention from its project topic. Do not invent a generic project-specific
 rule.
 
-The sidecar owns worktree polling, pre-existing-worktree refusal, explicit
-Supacode targets, default-tab and surface checks, `zmx` session discovery,
-harness launch, Diff creation, structural verification, and final Work focus.
+The sidecar owns worktree polling, pre-existing-worktree refusal, optional
+pinning, explicit Supacode targets, default-tab and surface checks, `zmx`
+session discovery, harness launch, Diff creation, structural verification, and
+final Work focus.
 Do not reproduce those mechanics in the calling shell.
 
 A successful call prints one JSON object with `worktree`, `work_tab`,
 `work_surface`, `work_session`, `work_shell_pid`, `diff_tab`, `diff_surface`,
-`diff_session`, and `diff_shell_pid`. Preserve it for verification. A non-zero
+`diff_session`, `diff_shell_pid`, and `pinned`. Preserve it for verification. A
+non-zero
 exit means setup is incomplete; report the error and inspect the existing state
 instead of guessing or retrying mutations.
 

@@ -30,6 +30,7 @@ class BenchRequest:
     color: str
     diff_command: str
     harness: tuple[str, ...]
+    pin: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,8 +44,9 @@ class BenchResult:
     diff_surface: str
     diff_session: str
     diff_shell_pid: int
+    pinned: bool
 
-    def as_dict(self) -> dict[str, str | int]:
+    def as_dict(self) -> dict[str, str | int | bool]:
         return {
             "worktree": self.worktree,
             "work_tab": self.work_tab,
@@ -55,6 +57,7 @@ class BenchResult:
             "diff_surface": self.diff_surface,
             "diff_session": self.diff_session,
             "diff_shell_pid": self.diff_shell_pid,
+            "pinned": self.pinned,
         }
 
 
@@ -208,6 +211,17 @@ def setup_bench(
             request.color,
         )
     )
+    if request.pin:
+        run(
+            (
+                "supacode",
+                "worktree",
+                "pin",
+                "-w",
+                worktree,
+                "--background",
+            )
+        )
     run(("supacode", "worktree", "focus", "-w", worktree))
 
     work_tab = exactly_one(
@@ -333,6 +347,7 @@ def setup_bench(
         diff_surface=diff_surface,
         diff_session=diff_session,
         diff_shell_pid=diff_shell_pid,
+        pinned=request.pin,
     )
 
 
@@ -342,6 +357,7 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
     parser.add_argument("--title", required=True)
     parser.add_argument("--color", required=True)
     parser.add_argument("--diff-command", required=True)
+    parser.add_argument("--pin", action="store_true")
     parser.add_argument("harness", nargs=argparse.REMAINDER)
     parsed = parser.parse_args(list(arguments))
     harness = tuple(parsed.harness)
@@ -355,6 +371,7 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
         color=parsed.color,
         diff_command=parsed.diff_command,
         harness=harness,
+        pin=parsed.pin,
     )
 
 

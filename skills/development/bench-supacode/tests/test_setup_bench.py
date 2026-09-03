@@ -56,17 +56,18 @@ class FakeRunner:
             raise AssertionError(f"Unused command responses: {remaining!r}")
 
 
-def request():
+def request(*, pin: bool = False):
     return SETUP_BENCH.BenchRequest(
         path=BENCH_PATH,
         title="Example task",
         color="blue",
         diff_command=DIFF_COMMAND,
         harness=HARNESS,
+        pin=pin,
     )
 
 
-def happy_runner() -> FakeRunner:
+def happy_runner(*, pin: bool = False) -> FakeRunner:
     runner = FakeRunner()
     runner.add(("supacode", "worktree", "list"), "", f"{WORKTREE}\n")
     runner.add(("supacode", "repo", "open", BENCH_PATH), "")
@@ -84,6 +85,11 @@ def happy_runner() -> FakeRunner:
         ),
         "",
     )
+    if pin:
+        runner.add(
+            ("supacode", "worktree", "pin", "-w", WORKTREE, "--background"),
+            "",
+        )
     runner.add(("supacode", "worktree", "focus", "-w", WORKTREE), "")
     runner.add(
         ("supacode", "tab", "list", "-w", WORKTREE),
@@ -160,12 +166,37 @@ class SetupBenchTests(unittest.TestCase):
                 "diff_surface": DIFF_TAB,
                 "diff_session": DIFF_SESSION,
                 "diff_shell_pid": DIFF_SHELL_PID,
+                "pinned": False,
             },
         )
         self.assertIn(("zmx", "run", WORK_SESSION, "-d", *HARNESS), runner.commands)
         self.assertEqual(
             runner.commands[-1],
             ("supacode", "tab", "focus", "-w", WORKTREE, "-t", WORK_TAB),
+        )
+        runner.assert_consumed()
+
+
+    def test_pin_flag_silently_pins_before_focusing_worktree(self) -> None:
+        runner = happy_runner(pin=True)
+        pin_command = (
+            "supacode",
+            "worktree",
+            "pin",
+            "-w",
+            WORKTREE,
+            "--background",
+        )
+
+        result = SETUP_BENCH.setup_bench(request(pin=True), run=runner)
+
+        self.assertTrue(result.pinned)
+        self.assertIn(pin_command, runner.commands)
+        self.assertLess(
+            runner.commands.index(pin_command),
+            runner.commands.index(
+                ("supacode", "worktree", "focus", "-w", WORKTREE)
+            ),
         )
         runner.assert_consumed()
 
@@ -284,12 +315,15 @@ class SetupBenchTests(unittest.TestCase):
                 "blue",
                 "--diff-command",
                 DIFF_COMMAND,
+                "--pin",
                 "--",
                 *HARNESS,
             ]
         )
 
         self.assertEqual(parsed.harness, HARNESS)
+
+        self.assertTrue(parsed.pin)
 
     def test_main_prints_json_result(self) -> None:
         runner = happy_runner()
