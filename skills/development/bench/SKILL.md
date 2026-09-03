@@ -11,6 +11,9 @@ description: >
 Create an isolated workspace for a task or review, start the chosen agent
 harness, and keep a live diff watcher beside it.
 
+See [configuration](references/configuration.md) for the layered harness and
+viewer resolver contract.
+
 ## Route to the UI skill
 
 Before doing UI setup, check the environment from the current shell:

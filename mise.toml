@@ -11,7 +11,10 @@ run = "npx --yes markdownlint-cli2 \"**/*.md\""
 
 [tasks.test]
 description = "Run Python unit tests"
-run = "python3 -m unittest discover -s skills/development/bench-supacode/tests"
+run = [
+  "python3 -m unittest discover -s skills/development/bench/tests",
+  "python3 -m unittest discover -s skills/development/bench-supacode/tests",
+]
 
 [tasks.check]
 description = "Run all checks"
