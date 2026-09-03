@@ -3,3 +3,4 @@
 apm_modules/
 .agents/
 .claude/
+__pycache__/

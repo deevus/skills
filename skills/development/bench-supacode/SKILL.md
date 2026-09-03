@@ -22,89 +22,45 @@ UI steps.
   worktree already has unexpected tabs or surfaces, stop rather than restructure
   a bench that may be in use.
 
-## Open the finished checkout
+## Open and arrange the finished checkout
 
-Capture the existing worktree ids before opening the checkout. Keep the
-captured value in the same shell call as the remaining setup commands.
-
-`supacode repo open <path>` is async and may print nothing. Poll until the new
-path appears:
+Resolve `scripts/setup_bench.py` relative to this skill's directory. Call it once
+after the checkout, environment, handoff brief, harness command, and Diff
+command are ready:
 
 ```bash
-EXISTING_WORKTREES=$(supacode worktree list)
-supacode repo open <bench-path>
-supacode worktree list
+BENCH_PATH="<bench-path>" # --path, e.g. /Users/me/Projects/project-task-123
+SHORT_TITLE="<short title>" # --title, e.g. "TASK-123 · parser fix"
+COLOUR="<colour>" # --color, e.g. blue
+DIFF_COMMAND="<watcher>" # --diff-command, e.g. comview watch -- git diff main...HEAD
+HARNESS=(claude --permission-mode plan "Read <brief>, then plan before edits.") # after --
+
+python3 <bench-supacode-skill-dir>/scripts/setup_bench.py \
+  --path "$BENCH_PATH" \
+  --title "$SHORT_TITLE" \
+  --color "$COLOUR" \
+  --diff-command "$DIFF_COMMAND" \
+  -- "${HARNESS[@]}"
 ```
 
-Derive `WT` from the new `worktree list`; it is usually the percent-encoded
-path. Abort before changing appearance or tabs if that id existed before the
-open:
+Use the selected harness command after `--`; the example shows the default from
+`bench`. Pass its executable and arguments separately rather than wrapping the
+whole command in one quoted argument.
 
-```bash
-if printf '%s\n' "$EXISTING_WORKTREES" | grep -Fx "$WT" >/dev/null; then
-  printf 'Bench worktree already existed; refusing to restructure %s\n' "$WT" >&2
-  exit 1
-fi
-
-supacode worktree appearance -w "$WT" --title "<short title>" --color <colour>
-```
-
-Use the task record for a short title. Use the project's established colour
-convention from its project topic; do not invent a generic project-specific
+Use the task record for the short title and the project's established colour
+convention from its project topic. Do not invent a generic project-specific
 rule.
 
-## Reuse the default tab and create Diff
+The sidecar owns worktree polling, pre-existing-worktree refusal, explicit
+Supacode targets, default-tab and surface checks, `zmx` session discovery,
+harness launch, Diff creation, structural verification, and final Work focus.
+Do not reproduce those mechanics in the calling shell.
 
-Opening a worktree leaves one default shell tab with one surface. Require that
-one-tab, one-surface structure before continuing. Reuse the default as `Work`
-and create only `Diff`.
-
-Run the related commands in one shell call so the captured ids remain
-available:
-
-```bash
-set -euo pipefail
-
-WORK_TAB=$(supacode tab list -w "$WT")
-TAB_COUNT=$(printf '%s\n' "$WORK_TAB" |
-  awk 'NF { count++ } END { print count + 0 }')
-if [ "$TAB_COUNT" -ne 1 ]; then
-  printf 'Expected one default tab; refusing to restructure %s\n' "$WT" >&2
-  exit 1
-fi
-
-WORK_SURFACE=$(supacode surface list -w "$WT" -t "$WORK_TAB")
-SURFACE_COUNT=$(printf '%s\n' "$WORK_SURFACE" |
-  awk 'NF { count++ } END { print count + 0 }')
-if [ "$SURFACE_COUNT" -ne 1 ]; then
-  printf 'Expected one Work surface; refusing to restructure %s\n' "$WT" >&2
-  exit 1
-fi
-
-if [ "$WORK_SURFACE" = "$WORK_TAB" ]; then
-  printf 'Expected the default tab surface to have a distinct id\n' >&2
-  exit 1
-fi
-
-WORK_SESSION="supa-$(printf '%s' "$WORK_SURFACE" | tr '[:upper:]' '[:lower:]')"
-zmx list --short | grep -Fx "$WORK_SESSION" >/dev/null
-
-supacode tab rename -w "$WT" -t "$WORK_TAB" --title Work
-zmx run "$WORK_SESSION" -d <harness command and arguments>
-DIFF_TAB=$(supacode tab new -w "$WT" --title Diff \
-  -i "<comview watcher command>")
-supacode tab focus -w "$WT" -t "$WORK_TAB"
-```
-
-The `zmx` session name comes from the surface id, not the tab id. Supacode names
-each backing session `supa-<lowercase surface UUID>`. The checks abort before
-renaming if the layout is unexpected or the exact session is absent. Pass the
-harness command and its arguments directly after `-d`; do not quote the whole
-command as one argument.
-
-`zmx run -d` launches the harness in the existing shell without waiting for it
-to exit. Do not split the default shell for the harness; the finished `Work` tab
-must contain one surface.
+A successful call prints one JSON object with `worktree`, `work_tab`,
+`work_surface`, `work_session`, `work_shell_pid`, `diff_tab`, `diff_surface`,
+`diff_session`, and `diff_shell_pid`. Preserve it for verification. A non-zero
+exit means setup is incomplete; report the error and inspect the existing state
+instead of guessing or retrying mutations.
 
 ## Target every command
 
@@ -121,17 +77,17 @@ current agent tab.
 
 ## Verify before reporting success
 
-Check both Supacode structure and process cwd:
+The sidecar verifies Supacode structure plus each backing shell's cwd.
+Independently confirm the returned shell pids still have the bench cwd:
 
 ```bash
-supacode tab list -w <WT>
-supacode surface list -w <WT> -t <WORK_TAB>
-supacode surface list -w <WT> -t <DIFF_TAB>
-lsof -a -d cwd -p <pid>
+lsof -a -d cwd -p <work_shell_pid>
+lsof -a -d cwd -p <diff_shell_pid>
 ```
 
-The harness and Comview watcher must both be rooted in `<bench-path>`. Focus
-back to `Work` after verification.
+The harness and Comview watcher inherit that cwd. If either supplied command
+changes directory itself, inspect that child process before reporting success.
+The sidecar leaves `Work` focused.
 
 ## Hosts without Supacode
 

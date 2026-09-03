@@ -9,6 +9,10 @@ run = "npx --yes prettier --write --prose-wrap always --print-width 80 \"**/*.md
 description = "Lint Markdown files"
 run = "npx --yes markdownlint-cli2 \"**/*.md\""
 
+[tasks.test]
+description = "Run Python unit tests"
+run = "python3 -m unittest discover -s skills/development/bench-supacode/tests"
+
 [tasks.check]
 description = "Run all checks"
-depends = ["lint"]
+depends = ["lint", "test"]
