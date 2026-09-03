@@ -29,7 +29,7 @@ COMPANION_SESSION = "supa-cccccccc-cccc-cccc-cccc-cccccccccccc"
 COMPANION_ROOT_PID = 5678
 COMPANION_SHELL_PID = 5679
 HARNESS = ("claude", "--permission-mode", "plan", "Read /tmp/brief.md")
-COMPANION_COMMAND = "watch-review -- git diff main...HEAD"
+COMPANION_COMMAND = "companion-tool --mode observe --label opaque-pass-through"
 
 
 class FakeRunner:
