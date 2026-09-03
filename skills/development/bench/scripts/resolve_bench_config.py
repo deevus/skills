@@ -115,6 +115,7 @@ def merge_harness_layer(
             raise ConfigError(f"Unsupported harness.tool in {source}: {tool}")
         config.tool = tool
         config.command = None
+        config.permission_mode = None
 
     if "command" in data:
         command = require_command(data["command"], source)
@@ -299,6 +300,7 @@ def resolve_config(
             raise ConfigError(f"Unsupported --harness-tool: {harness_tool}")
         config.harness.tool = harness_tool
         config.harness.command = None
+        config.harness.permission_mode = None
 
     if diff_tool is not None:
         if diff_tool not in DIFF_TOOLS:

@@ -199,6 +199,42 @@ class ResolveBenchConfigTests(unittest.TestCase):
         self.assertEqual(result["harness"]["tool"], "claude")
         self.assertEqual(result["harness"]["argv"], ["claude", "--permission-mode", "manual", f"Read {self.brief}, then plan before edits."])
 
+    def test_repository_tool_pi_clears_inherited_claude_permission_mode(self) -> None:
+        self.executables.add("pi")
+        self.write_user(
+            """
+            [harness]
+            tool = "claude"
+            permission_mode = "bypassPermissions"
+            """
+        )
+        self.write_repo(
+            """
+            [harness]
+            tool = "pi"
+            """
+        )
+
+        result = self.resolve()
+
+        self.assertEqual(result["harness"]["tool"], "pi")
+        self.assertEqual(result["harness"]["argv"], ["pi", f"@{self.brief}", f"Read {self.brief}, then plan before edits."])
+
+    def test_explicit_harness_tool_pi_clears_inherited_permission_mode(self) -> None:
+        self.executables.add("pi")
+        self.write_repo(
+            """
+            [harness]
+            tool = "claude"
+            permission_mode = "auto"
+            """
+        )
+
+        result = self.resolve("--harness-tool", "pi")
+
+        self.assertEqual(result["harness"]["tool"], "pi")
+        self.assertEqual(result["harness"]["argv"], ["pi", f"@{self.brief}", f"Read {self.brief}, then plan before edits."])
+
     def test_higher_precedence_command_clears_tool_and_permission_mode(self) -> None:
         self.executables.add("custom-agent")
         self.write_user(

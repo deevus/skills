@@ -53,7 +53,8 @@ Defaults:
   configuration layer.
 - `harness.command` must be a non-empty argv array of non-empty strings. It is
   never treated as a shell command.
-- A higher-precedence `harness.tool` clears an inherited custom command.
+- A higher-precedence `harness.tool` clears inherited `command` and
+  `permission_mode`.
 - A higher-precedence `harness.command` clears inherited `tool` and
   `permission_mode`.
 - `prompt` layers independently and is appended as the final argv item for
