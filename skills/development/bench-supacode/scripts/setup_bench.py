@@ -28,8 +28,9 @@ class BenchRequest:
     path: str
     title: str
     color: str
-    diff_command: str
     harness: tuple[str, ...]
+    companion_title: str | None = None
+    companion_command: str | None = None
     pin: bool = False
 
 
@@ -40,23 +41,23 @@ class BenchResult:
     work_surface: str
     work_session: str
     work_shell_pid: int
-    diff_tab: str
-    diff_surface: str
-    diff_session: str
-    diff_shell_pid: int
+    companion_tab: str | None
+    companion_surface: str | None
+    companion_session: str | None
+    companion_shell_pid: int | None
     pinned: bool
 
-    def as_dict(self) -> dict[str, str | int | bool]:
+    def as_dict(self) -> dict[str, str | int | bool | None]:
         return {
             "worktree": self.worktree,
             "work_tab": self.work_tab,
             "work_surface": self.work_surface,
             "work_session": self.work_session,
             "work_shell_pid": self.work_shell_pid,
-            "diff_tab": self.diff_tab,
-            "diff_surface": self.diff_surface,
-            "diff_session": self.diff_session,
-            "diff_shell_pid": self.diff_shell_pid,
+            "companion_tab": self.companion_tab,
+            "companion_surface": self.companion_surface,
+            "companion_session": self.companion_session,
+            "companion_shell_pid": self.companion_shell_pid,
             "pinned": self.pinned,
         }
 
@@ -178,7 +179,9 @@ def setup_bench(
     timeout: float = 180.0,
     poll_interval: float = 0.25,
 ) -> BenchResult:
-    """Create the two-tab Supacode layout for a new bench."""
+    """Create the Supacode layout for a new bench."""
+    if (request.companion_title is None) != (request.companion_command is None):
+        raise SetupError("companion title and command must be specified together")
     if not request.harness:
         raise SetupError("Harness command is required")
 
@@ -266,27 +269,34 @@ def setup_bench(
         )
     )
     run(("zmx", "run", work_session, "-d", *request.harness))
-    diff_tab = exactly_one(
-        output_lines(
-            run(
-                (
-                    "supacode",
-                    "tab",
-                    "new",
-                    "-w",
-                    worktree,
-                    "--title",
-                    "Diff",
-                    "-i",
-                    request.diff_command,
+
+    companion_tab: str | None = None
+    companion_surface: str | None = None
+    companion_session: str | None = None
+    companion_shell_pid: int | None = None
+    if request.companion_title is not None and request.companion_command is not None:
+        companion_tab = exactly_one(
+            output_lines(
+                run(
+                    (
+                        "supacode",
+                        "tab",
+                        "new",
+                        "-w",
+                        worktree,
+                        "--title",
+                        request.companion_title,
+                        "-i",
+                        request.companion_command,
+                    )
                 )
-            )
-        ),
-        "Diff tab id",
-    )
+            ),
+            "companion tab id",
+        )
 
     final_tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
-    if len(final_tabs) != 2 or set(final_tabs) != {work_tab, diff_tab}:
+    expected_tabs = {work_tab} if companion_tab is None else {work_tab, companion_tab}
+    if len(final_tabs) != len(expected_tabs) or set(final_tabs) != expected_tabs:
         raise SetupError(f"Unexpected final tabs: {final_tabs!r}")
 
     final_work_surface = exactly_one(
@@ -308,33 +318,35 @@ def setup_bench(
     if final_work_surface != work_surface:
         raise SetupError("Work surface changed during setup")
 
-    diff_surface = exactly_one(
-        output_lines(
-            run(
-                (
-                    "supacode",
-                    "surface",
-                    "list",
-                    "-w",
-                    worktree,
-                    "-t",
-                    diff_tab,
+    if companion_tab is not None:
+        companion_surface = exactly_one(
+            output_lines(
+                run(
+                    (
+                        "supacode",
+                        "surface",
+                        "list",
+                        "-w",
+                        worktree,
+                        "-t",
+                        companion_tab,
+                    )
                 )
-            )
-        ),
-        "final Diff surface",
-    )
-    if diff_surface != diff_tab:
-        raise SetupError("Diff surface id does not match its tab id")
+            ),
+            "final companion surface",
+        )
+        if companion_surface != companion_tab:
+            raise SetupError("Companion surface id does not match its tab id")
+        companion_session = f"supa-{companion_surface.lower()}"
 
-    diff_session = f"supa-{diff_surface.lower()}"
     sessions = parse_zmx_sessions(run(("zmx", "list")))
     work_shell_pid = require_session_shell(
         sessions, work_session, bench_path, run=run
     )
-    diff_shell_pid = require_session_shell(
-        sessions, diff_session, bench_path, run=run
-    )
+    if companion_session is not None:
+        companion_shell_pid = require_session_shell(
+            sessions, companion_session, bench_path, run=run
+        )
 
     run(("supacode", "tab", "focus", "-w", worktree, "-t", work_tab))
     return BenchResult(
@@ -343,10 +355,10 @@ def setup_bench(
         work_surface=work_surface,
         work_session=work_session,
         work_shell_pid=work_shell_pid,
-        diff_tab=diff_tab,
-        diff_surface=diff_surface,
-        diff_session=diff_session,
-        diff_shell_pid=diff_shell_pid,
+        companion_tab=companion_tab,
+        companion_surface=companion_surface,
+        companion_session=companion_session,
+        companion_shell_pid=companion_shell_pid,
         pinned=request.pin,
     )
 
@@ -356,10 +368,13 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
     parser.add_argument("--path", required=True)
     parser.add_argument("--title", required=True)
     parser.add_argument("--color", required=True)
-    parser.add_argument("--diff-command", required=True)
+    parser.add_argument("--companion-title")
+    parser.add_argument("--companion-command")
     parser.add_argument("--pin", action="store_true")
     parser.add_argument("harness", nargs=argparse.REMAINDER)
     parsed = parser.parse_args(list(arguments))
+    if (parsed.companion_title is None) != (parsed.companion_command is None):
+        parser.error("--companion-title and --companion-command must be specified together")
     harness = tuple(parsed.harness)
     if harness[:1] == ("--",):
         harness = harness[1:]
@@ -369,8 +384,9 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
         path=parsed.path,
         title=parsed.title,
         color=parsed.color,
-        diff_command=parsed.diff_command,
         harness=harness,
+        companion_title=parsed.companion_title,
+        companion_command=parsed.companion_command,
         pin=parsed.pin,
     )
 
