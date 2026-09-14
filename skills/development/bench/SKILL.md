@@ -55,7 +55,8 @@ and viewer-specific brief text.
    2. Pi, plan before edits.
 
    Then rerun the resolver with `--plan-harness-tool claude` or
-   `--plan-harness-tool pi`.
+   `--plan-harness-tool pi`. Include any earlier explicit selections on every
+   rerun, so later Work or Diff choices do not drop the Plan choice.
 
 6. If the Work harness has `selection_required` true, ask once with a numbered
    list:
@@ -63,6 +64,8 @@ and viewer-specific brief text.
    2. Pi, plan before edits.
 
    Then rerun the resolver with `--harness-tool claude` or `--harness-tool pi`.
+   Include any earlier explicit selections on every rerun, so later Diff choices
+   do not drop Plan or Work choices.
 
 7. If `diff.selection_required` is true, ask once with a numbered list:
    1. Comview.
@@ -70,7 +73,8 @@ and viewer-specific brief text.
    3. None.
 
    Then rerun the resolver with `--diff-tool comview`, `--diff-tool hunk`, or
-   `--diff-tool none`.
+   `--diff-tool none`. Include all earlier explicit Plan and Work selections on
+   this rerun.
 
 8. Stop on resolver errors. Do not guess when configuration is malformed, an
    executable is missing, or a required choice is unresolved.

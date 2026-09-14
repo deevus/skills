@@ -18,7 +18,9 @@ python3 <bench-skill-dir>/scripts/resolve_bench_config.py \
 ```
 
 After a user choice, run the same command again with `--harness-tool`,
-`--plan-harness-tool`, and/or `--diff-tool`.
+`--plan-harness-tool`, and/or `--diff-tool`. Include all earlier explicit
+selections on every rerun, so a later Plan, Work, or Diff choice does not drop an
+earlier choice.
 
 ## Precedence
 
