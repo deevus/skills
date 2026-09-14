@@ -2,7 +2,8 @@
 
 `bench` resolves harness and diff-viewer choices from layered TOML files plus
 explicit request flags. The resolver is the source of truth for final harness
-argv; UI skills must pass the returned argv without rebuilding it.
+argv values and diff viewer choice. UI skills must pass returned argv arrays
+without rebuilding them.
 
 ## Resolver command
 
@@ -16,8 +17,10 @@ python3 <bench-skill-dir>/scripts/resolve_bench_config.py \
   --brief /tmp/bench-brief.md
 ```
 
-After a user choice, run the same command again with `--harness-tool` and/or
-`--diff-tool`.
+After a user choice, run the same command again with `--harness-tool`,
+`--plan-harness-tool`, and/or `--diff-tool`. Include all earlier explicit
+selections on every rerun, so a later Plan, Work, or Diff choice does not drop an
+earlier choice.
 
 ## Precedence
 
@@ -33,6 +36,8 @@ flags override both.
 
 ## Schema
 
+The legacy `[harness]` table remains valid. It means the Work harness.
+
 ```toml
 [harness]
 tool = "claude" # ask | claude | pi
@@ -44,40 +49,110 @@ prompt = "Read {brief}, then plan before edits."
 tool = "auto" # auto | comview | hunk | none
 ```
 
+Use `[[harnesses]]` when a bench needs first-class harness tabs by role.
+
+```toml
+[[harnesses]]
+role = "plan" # plan | work
+title = "Plan"
+tool = "claude"
+permission_mode = "plan"
+prompt = "Read {brief}, write a plan, then stop."
+
+[[harnesses]]
+role = "work"
+title = "Work"
+command = ["pi", "--model", "openai-codex/gpt-5.6-astra"]
+# No prompt: start Work as an empty interactive agent.
+
+[diff]
+tool = "comview"
+```
+
 Defaults:
 
-- Missing `[harness]` behaves as `tool = "ask"`.
-- Missing `harness.prompt` behaves as
+- Missing `[harness]` and missing `[[harnesses]] role = "work"` behaves as Work
+  `tool = "ask"`.
+- Missing legacy `harness.prompt` behaves as
   `"Read {brief}, then plan before edits."`.
+- Missing `prompt` in a `[[harnesses]]` entry means no initial prompt for that
+  role.
+- Missing `title` in a `[[harnesses]]` entry defaults to `Plan` for `plan` and
+  `Work` for `work`.
 - Missing `[diff]` behaves as `tool = "auto"`.
+
+## Harness roles
+
+Only two roles are supported:
+
+- `plan`: optional. When present, bench creates a first-class Plan tab.
+- `work`: required after resolution. If absent, it falls back to the existing
+  Work default and selection behavior.
+
+The resolved harness list is ordered as Plan, then Work. Final UI focus returns
+to Work.
+
+A config layer must not define both `[harness]` and `[[harnesses]]` with
+`role = "work"`. That is ambiguous and resolves as an error.
+
+A higher-precedence layer can remove an inherited role:
+
+```toml
+[[harnesses]]
+role = "plan"
+enabled = false
+```
+
+`enabled = false` removes that role from the final harness map. It cannot be
+combined with `tool`, `command`, `prompt`, `permission_mode`, or `title`.
+Disabling Work is an error unless an explicit Work override is supplied for the
+current run.
 
 ## Harness rules
 
-- `harness.tool` and `harness.command` are mutually exclusive in the same
-  configuration layer.
-- `harness.command` must be a non-empty argv array of non-empty strings. It is
-  never treated as a shell command.
-- A higher-precedence `harness.tool` clears inherited `command` and
-  `permission_mode`.
-- A higher-precedence `harness.command` clears inherited `tool` and
-  `permission_mode`.
-- `prompt` layers independently and is appended as the final argv item for
-  configured harnesses.
+- `tool` and `command` are mutually exclusive in the same harness table.
+- `command` must be a non-empty argv array of non-empty strings. It is never
+  treated as a shell command.
+- A higher-precedence `tool` clears inherited `command` and `permission_mode`.
+- A higher-precedence `command` clears inherited `tool` and `permission_mode`.
+- In legacy `[harness]`, `prompt` layers independently and defaults when
+  omitted.
+- In `[[harnesses]]`, each role entry resets that role's prompt. Provide
+  `prompt` to append one, or omit it to append no prompt.
 - Only `{brief}` may be interpolated, and only in command arguments and prompt.
 - Claude supports `acceptEdits`, `auto`, `bypassPermissions`, `manual`,
   `dontAsk`, and `plan`; omission defaults to `plan`.
-- Pi rejects `permission_mode`; use `harness.command` for custom Pi flags.
+- Pi rejects `permission_mode`; use `command` for custom Pi flags.
 - Configured preset and custom harness executables must exist on `PATH`.
 
-Rendered presets:
+Rendered presets with a prompt:
 
 ```text
 claude --permission-mode <mode> <prompt>
 pi @<brief> <prompt>
 ```
 
-Custom commands substitute `{brief}` in argv elements, then append the rendered
-prompt as one final argv item.
+Rendered presets without a prompt:
+
+```text
+claude --permission-mode <mode>
+pi
+```
+
+Custom commands substitute `{brief}` in argv elements. The resolver appends the
+rendered prompt as the final argv item only when that harness role has a prompt.
+
+## Request flags
+
+- `--harness-tool claude|pi|ask` selects or overrides Work for this request.
+- `--plan-harness-tool claude|pi|ask` selects or overrides Plan for this
+  request.
+- `--diff-tool auto|comview|hunk|none` selects or overrides the diff viewer for
+  this request.
+
+Explicit harness flags clear inherited `command` and `permission_mode` for their
+role. If the role did not exist, the flag creates it with the default prompt
+behavior.
 
 ## Diff rules
 
@@ -93,14 +168,37 @@ must ask for Comview, Hunk, or None and rerun the resolver with `--diff-tool`.
 
 ## JSON output
 
+The resolver keeps the legacy `harness` object. It is the resolved Work harness.
+It also returns `harnesses`, the ordered list of first-class harness tabs.
+
 ```json
 {
   "harness": {
-    "tool": "claude",
-    "argv": ["claude", "--permission-mode", "plan", "..."],
+    "role": "work",
+    "title": "Work",
+    "tool": "pi",
+    "argv": ["pi", "@/tmp/bench-brief.md", "Read ..."],
     "available": ["claude", "pi"],
     "selection_required": false
   },
+  "harnesses": [
+    {
+      "role": "plan",
+      "title": "Plan",
+      "tool": "claude",
+      "argv": ["claude", "--permission-mode", "plan", "Read ..."],
+      "available": ["claude", "pi"],
+      "selection_required": false
+    },
+    {
+      "role": "work",
+      "title": "Work",
+      "tool": "custom",
+      "argv": ["pi", "--model", "openai-codex/gpt-5.6-astra"],
+      "available": ["claude", "pi"],
+      "selection_required": false
+    }
+  ],
   "diff": {
     "tool": null,
     "available": ["comview", "hunk"],
@@ -109,9 +207,16 @@ must ask for Comview, Hunk, or None and rerun the resolver with `--diff-tool`.
 }
 ```
 
-For `harness.tool = "ask"`, `harness.tool` is `null`, `argv` is empty, and
-`selection_required` is `true`. For `harness.command`, `harness.tool` is
-`"custom"` and `argv` contains the rendered command plus prompt.
+For `tool = "ask"`, `tool` is `null`, `argv` is empty, and `selection_required`
+is `true`. For `command`, `tool` is `"custom"` and `argv` contains the rendered
+command plus a prompt only when one is configured.
+
+## Split-harness handoff
+
+The first split-harness workflow is human-mediated. Plan starts with its
+configured prompt. Work can start with no prompt as an empty interactive agent.
+The Plan prompt should tell the Plan agent to write the plan, stop for approval,
+and then produce the exact prompt that the human should paste into Work.
 
 ## Security boundary
 
@@ -125,10 +230,16 @@ cannot expand arbitrary environment variables or command substitutions.
 Resolution fails instead of guessing when configuration is malformed or
 conflicting, including:
 
-- unknown top-level, `[harness]`, or `[diff]` keys;
+- unknown top-level, `[harness]`, `[[harnesses]]`, or `[diff]` keys;
+- unknown harness roles;
+- duplicate harness roles in one layer;
+- `[harness]` plus `[[harnesses]] role = "work"` in one layer;
 - empty strings or empty command arrays;
+- empty `title` values;
+- `enabled = false` combined with other harness fields;
+- Work disabled without an explicit Work override;
 - unsupported tools or Claude permission modes;
-- `harness.tool` combined with `harness.command` in one layer;
+- `tool` combined with `command` in one harness table;
 - `permission_mode` with Pi, Ask, or a custom command;
 - unsupported placeholders such as `{ticket}`;
 - missing executables for configured harnesses or explicit diff viewers.

@@ -19,11 +19,18 @@ This skill applies when `HERDR_ENV=1`.
 
 - bench path;
 - short workspace title;
-- harness argv for the Work tab; and
+- ordered harness tab specs;
 - optional companion title plus companion command.
 
-The companion pair is optional. If one of title or command is missing, stop and
-return to `bench` for corrected inputs.
+Each harness tab spec contains:
+
+- `role`: `plan` or `work`;
+- `title`: the tab title; and
+- `argv`: the harness argv array.
+
+Exactly one Work harness tab is required. A Plan harness tab is optional. The
+companion pair is optional. If one of companion title or command is missing,
+stop and return to `bench` for corrected inputs.
 
 Do not detect viewers, construct companion commands, or add review semantics in
 this skill. Treat the companion as a generic terminal command.
@@ -34,15 +41,21 @@ this skill. Treat the companion as a generic terminal command.
 2. Confirm the bench path exists and has the expected VCS metadata.
 3. Open or create a Herdr workspace rooted at the bench path.
 4. Label the workspace with the short title from `bench`.
-5. Use a single Work tab for the harness. Rename or label the initial tab as
-   `Work` when Herdr exposes that control.
-6. Start the harness argv in `Work` without wrapping the argv in a new shell
-   string.
-7. If no companion was provided, keep only `Work` and focus it.
-8. If a companion was provided, create a separate tab rooted at the same bench
+5. Create harness tabs in the order supplied by `bench`.
+6. Reuse the initial tab for the first harness tab when Herdr exposes that
+   control. Rename or label it with the harness tab title.
+7. Start each harness argv from its own tab without wrapping the argv in a new
+   shell string.
+8. If no companion was provided, keep only the harness tabs and focus Work.
+9. If a companion was provided, create a separate tab rooted at the same bench
    path. Title it exactly with the companion title.
-9. Run the companion command in that companion tab.
-10. Focus back to `Work`.
+10. Run the companion command in that companion tab.
+11. Focus back to Work.
+
+The default layout is Work plus optional companion. A split-harness layout is
+Plan, Work, and optional companion. In version 1, Plan produces the exact prompt
+that the human should paste into Work after plan approval; Herdr does not signal
+Work directly.
 
 Use project-specific title or color conventions only when `bench` passes them in
 or the project topic requires them.
@@ -51,10 +64,10 @@ or the project topic requires them.
 
 Before reporting success:
 
-- confirm the Work tab's shell starts in the bench path;
-- confirm the harness process started from the Work tab;
+- confirm each harness tab's shell starts in the bench path;
+- confirm each harness process started from its own tab;
 - if a companion exists, confirm its tab shell starts in the bench path;
-- confirm Work and companion use separate tabs, not split panes;
+- confirm Work, Plan, and companion use separate tabs, not split panes;
 - confirm focus returned to Work; and
 - fail closed on missing tabs, ambiguous cwd, unexpected existing sessions, or a
   half-specified companion.

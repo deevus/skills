@@ -75,6 +75,18 @@ class ResolveBenchConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(RESOLVER.ConfigError, message):
             self.resolve(*extra_args)
 
+    def test_resolve_config_accepts_plan_harness_tool_compatibility_parameter(self) -> None:
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            result = RESOLVER.resolve_config(
+                repo_root=self.repo,
+                brief=self.brief,
+                plan_harness_tool=None,
+                which=lambda _name: None,
+            )
+
+        self.assertEqual(result["harness"]["role"], "work")
+        self.assertEqual(result["harnesses"], [result["harness"]])
+
     def test_missing_files_default_to_ask_harness_and_auto_none_diff(self) -> None:
         result = self.resolve()
 
@@ -82,11 +94,23 @@ class ResolveBenchConfigTests(unittest.TestCase):
             result,
             {
                 "harness": {
+                    "role": "work",
+                    "title": "Work",
                     "tool": None,
                     "argv": [],
                     "available": [],
                     "selection_required": True,
                 },
+                "harnesses": [
+                    {
+                        "role": "work",
+                        "title": "Work",
+                        "tool": None,
+                        "argv": [],
+                        "available": [],
+                        "selection_required": True,
+                    }
+                ],
                 "diff": {
                     "tool": "none",
                     "available": [],
@@ -117,6 +141,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
 
         self.assertEqual(result["harness"]["tool"], "claude")
         self.assertEqual(result["harness"]["argv"], ["claude", "--permission-mode", "plan", f"XDG {self.brief}"])
+        self.assertEqual(result["harnesses"], [{**result["harness"], "role": "work", "title": "Work"}])
 
     def test_falls_back_to_home_config_when_xdg_is_unset(self) -> None:
         self.executables.add("pi")
@@ -366,6 +391,185 @@ class ResolveBenchConfigTests(unittest.TestCase):
         )
 
         self.assert_config_error("mutually exclusive")
+
+    def test_role_keyed_harnesses_resolve_plan_and_work(self) -> None:
+        self.executables.update({"claude", "pi"})
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "plan"
+            tool = "claude"
+            permission_mode = "plan"
+            prompt = "Plan from {brief}"
+
+            [[harnesses]]
+            role = "work"
+            command = ["pi", "--model", "openai-codex/gpt-5.6-astra"]
+            """
+        )
+
+        result = self.resolve()
+
+        self.assertEqual([item["role"] for item in result["harnesses"]], ["plan", "work"])
+        self.assertEqual(result["harnesses"][0]["argv"], ["claude", "--permission-mode", "plan", f"Plan from {self.brief}"])
+        self.assertEqual(result["harnesses"][1]["tool"], "custom")
+        self.assertEqual(result["harnesses"][1]["argv"], ["pi", "--model", "openai-codex/gpt-5.6-astra"])
+        self.assertEqual(result["harness"], result["harnesses"][1])
+
+    def test_omitted_prompt_in_role_entry_clears_inherited_prompt(self) -> None:
+        self.executables.add("pi")
+        self.write_user(
+            """
+            [[harnesses]]
+            role = "work"
+            command = ["pi"]
+            prompt = "User prompt {brief}"
+            """
+        )
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "work"
+            command = ["pi", "--model", "openai-codex/gpt-5.6-astra"]
+            """
+        )
+
+        result = self.resolve()
+
+        self.assertEqual(result["harness"]["argv"], ["pi", "--model", "openai-codex/gpt-5.6-astra"])
+
+    def test_role_keyed_pi_without_prompt_starts_without_brief_prompt(self) -> None:
+        self.executables.add("pi")
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "work"
+            tool = "pi"
+            """
+        )
+
+        result = self.resolve()
+
+        self.assertEqual(result["harness"]["argv"], ["pi"])
+
+    def test_plan_harness_can_be_disabled_by_higher_precedence_layer(self) -> None:
+        self.executables.add("pi")
+        self.write_user(
+            """
+            [[harnesses]]
+            role = "plan"
+            command = ["pi"]
+            prompt = "Plan {brief}"
+            """
+        )
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "plan"
+            enabled = false
+            """
+        )
+
+        result = self.resolve("--harness-tool", "pi")
+
+        self.assertEqual([item["role"] for item in result["harnesses"]], ["work"])
+
+    def test_explicit_plan_harness_tool_opts_into_plan_role(self) -> None:
+        self.executables.update({"claude", "pi"})
+        result = self.resolve("--plan-harness-tool", "claude", "--harness-tool", "pi")
+
+        self.assertEqual([item["role"] for item in result["harnesses"]], ["plan", "work"])
+        self.assertEqual(result["harnesses"][0]["tool"], "claude")
+        self.assertEqual(result["harnesses"][1]["tool"], "pi")
+
+    def test_unknown_harness_role_is_rejected(self) -> None:
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "review"
+            tool = "claude"
+            """
+        )
+
+        self.assert_config_error("Unsupported harness role")
+
+    def test_duplicate_harness_roles_in_one_layer_are_rejected(self) -> None:
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "plan"
+            tool = "claude"
+
+            [[harnesses]]
+            role = "plan"
+            tool = "pi"
+            """
+        )
+
+        self.assert_config_error("Duplicate harness role")
+
+    def test_legacy_harness_and_role_keyed_work_in_one_layer_are_rejected(self) -> None:
+        self.write_repo(
+            """
+            [harness]
+            tool = "claude"
+
+            [[harnesses]]
+            role = "work"
+            tool = "pi"
+            """
+        )
+
+        self.assert_config_error("cannot both define")
+
+    def test_empty_harness_title_is_rejected(self) -> None:
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "work"
+            title = ""
+            tool = "pi"
+            """
+        )
+
+        self.assert_config_error("title.*non-empty")
+
+    def test_disabled_harness_cannot_include_other_fields(self) -> None:
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "plan"
+            enabled = false
+            prompt = "Plan {brief}"
+            """
+        )
+
+        self.assert_config_error("enabled = false")
+
+    def test_work_harness_cannot_be_disabled_without_explicit_override(self) -> None:
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "work"
+            enabled = false
+            """
+        )
+
+        self.assert_config_error("work.*disabled")
+
+    def test_explicit_work_harness_tool_overrides_disabled_work_role(self) -> None:
+        self.executables.add("pi")
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "work"
+            enabled = false
+            """
+        )
+
+        result = self.resolve("--harness-tool", "pi")
+
+        self.assertEqual(result["harness"]["tool"], "pi")
 
     def test_diff_explicit_none_never_requires_selection(self) -> None:
         self.write_repo(

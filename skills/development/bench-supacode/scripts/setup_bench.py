@@ -11,7 +11,7 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.parse import quote
 
 
@@ -23,12 +23,42 @@ class Runner(Protocol):
     def __call__(self, command: Sequence[str]) -> str: ...
 
 
+HARNESS_ROLES = frozenset({"plan", "work"})
+
+
+@dataclass(frozen=True)
+class HarnessTab:
+    role: str
+    title: str
+    argv: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class HarnessTabResult:
+    role: str
+    title: str
+    tab: str
+    surface: str
+    session: str
+    shell_pid: int
+
+    def as_dict(self) -> dict[str, str | int]:
+        return {
+            "role": self.role,
+            "title": self.title,
+            "tab": self.tab,
+            "surface": self.surface,
+            "session": self.session,
+            "shell_pid": self.shell_pid,
+        }
+
+
 @dataclass(frozen=True)
 class BenchRequest:
     path: str
     title: str
     color: str
-    harness: tuple[str, ...]
+    harness_tabs: tuple[HarnessTab, ...]
     companion_title: str | None = None
     companion_command: str | None = None
     pin: bool = False
@@ -41,19 +71,21 @@ class BenchResult:
     work_surface: str
     work_session: str
     work_shell_pid: int
+    harness_tabs: tuple[HarnessTabResult, ...]
     companion_tab: str | None
     companion_surface: str | None
     companion_session: str | None
     companion_shell_pid: int | None
     pinned: bool
 
-    def as_dict(self) -> dict[str, str | int | bool | None]:
+    def as_dict(self) -> dict[str, str | int | bool | None | list[dict[str, str | int]]]:
         return {
             "worktree": self.worktree,
             "work_tab": self.work_tab,
             "work_surface": self.work_surface,
             "work_session": self.work_session,
             "work_shell_pid": self.work_shell_pid,
+            "harness_tabs": [tab.as_dict() for tab in self.harness_tabs],
             "companion_tab": self.companion_tab,
             "companion_surface": self.companion_surface,
             "companion_session": self.companion_session,
@@ -170,6 +202,39 @@ def wait_for_worktree(
         sleep(poll_interval)
 
 
+def validate_harness_tabs(harness_tabs: Sequence[HarnessTab]) -> tuple[HarnessTab, ...]:
+    if not harness_tabs:
+        raise SetupError("At least one harness tab is required")
+    plan_count = 0
+    work_count = 0
+    validated: list[HarnessTab] = []
+    for tab in harness_tabs:
+        if tab.role not in HARNESS_ROLES:
+            raise SetupError(f"Unsupported harness tab role: {tab.role}")
+        if tab.title == "":
+            raise SetupError(f"Harness tab title is required for role {tab.role}")
+        if not tab.argv:
+            raise SetupError(f"Harness command is required for role {tab.role}")
+        if tab.role == "plan":
+            plan_count += 1
+
+        if tab.role == "work":
+            work_count += 1
+        validated.append(tab)
+    if plan_count > 1:
+        raise SetupError(f"Expected at most one plan harness tab; found {plan_count}")
+
+    if work_count != 1:
+        raise SetupError(f"Expected exactly one work harness tab; found {work_count}")
+    return tuple(validated)
+
+
+def require_short_session(name: str, *, run: Runner) -> None:
+    sessions = output_lines(run(("zmx", "list", "--short")))
+    if name not in sessions:
+        raise SetupError(f"Expected zmx session was not found: {name}")
+
+
 def setup_bench(
     request: BenchRequest,
     *,
@@ -182,8 +247,7 @@ def setup_bench(
     """Create the Supacode layout for a new bench."""
     if (request.companion_title is None) != (request.companion_command is None):
         raise SetupError("companion title and command must be specified together")
-    if not request.harness:
-        raise SetupError("Harness command is required")
+    harness_tabs = validate_harness_tabs(request.harness_tabs)
 
     bench_path = normalized_path(request.path)
     worktree = worktree_id(bench_path)
@@ -227,11 +291,11 @@ def setup_bench(
         )
     run(("supacode", "worktree", "focus", "-w", worktree))
 
-    work_tab = exactly_one(
+    default_tab = exactly_one(
         output_lines(run(("supacode", "tab", "list", "-w", worktree))),
         "default tab",
     )
-    work_surface = exactly_one(
+    default_surface = exactly_one(
         output_lines(
             run(
                 (
@@ -241,20 +305,19 @@ def setup_bench(
                     "-w",
                     worktree,
                     "-t",
-                    work_tab,
+                    default_tab,
                 )
             )
         ),
         "default surface",
     )
-    if work_surface == work_tab:
+    if default_surface == default_tab:
         raise SetupError("Expected the default surface to have a distinct id")
 
-    work_session = f"supa-{work_surface.lower()}"
-    sessions = output_lines(run(("zmx", "list", "--short")))
-    if work_session not in sessions:
-        raise SetupError(f"Expected zmx session was not found: {work_session}")
-
+    harness_results: list[HarnessTabResult] = []
+    first = harness_tabs[0]
+    first_session = f"supa-{default_surface.lower()}"
+    require_short_session(first_session, run=run)
     run(
         (
             "supacode",
@@ -263,12 +326,49 @@ def setup_bench(
             "-w",
             worktree,
             "-t",
-            work_tab,
+            default_tab,
             "--title",
-            "Work",
+            first.title,
         )
     )
-    run(("zmx", "run", work_session, "-d", *request.harness))
+    run(("zmx", "run", first_session, "-d", *first.argv))
+    harness_results.append(
+        HarnessTabResult(
+            role=first.role,
+            title=first.title,
+            tab=default_tab,
+            surface=default_surface,
+            session=first_session,
+            shell_pid=0,
+        )
+    )
+
+    for tab in harness_tabs[1:]:
+        tab_id = exactly_one(
+            output_lines(
+                run(("supacode", "tab", "new", "-w", worktree, "--title", tab.title))
+            ),
+            f"{tab.role} tab id",
+        )
+        surface = exactly_one(
+            output_lines(
+                run(("supacode", "surface", "list", "-w", worktree, "-t", tab_id))
+            ),
+            f"{tab.role} surface",
+        )
+        session = f"supa-{surface.lower()}"
+        require_short_session(session, run=run)
+        run(("zmx", "run", session, "-d", *tab.argv))
+        harness_results.append(
+            HarnessTabResult(
+                role=tab.role,
+                title=tab.title,
+                tab=tab_id,
+                surface=surface,
+                session=session,
+                shell_pid=0,
+            )
+        )
 
     companion_tab: str | None = None
     companion_surface: str | None = None
@@ -295,28 +395,32 @@ def setup_bench(
         )
 
     final_tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
-    expected_tabs = {work_tab} if companion_tab is None else {work_tab, companion_tab}
+    expected_tabs = {tab.tab for tab in harness_results}
+    if companion_tab is not None:
+        expected_tabs.add(companion_tab)
     if len(final_tabs) != len(expected_tabs) or set(final_tabs) != expected_tabs:
         raise SetupError(f"Unexpected final tabs: {final_tabs!r}")
 
-    final_work_surface = exactly_one(
-        output_lines(
-            run(
-                (
-                    "supacode",
-                    "surface",
-                    "list",
-                    "-w",
-                    worktree,
-                    "-t",
-                    work_tab,
+    for index, result in enumerate(harness_results):
+        final_surface = exactly_one(
+            output_lines(
+                run(
+                    (
+                        "supacode",
+                        "surface",
+                        "list",
+                        "-w",
+                        worktree,
+                        "-t",
+                        result.tab,
+                    )
                 )
-            )
-        ),
-        "final Work surface",
-    )
-    if final_work_surface != work_surface:
-        raise SetupError("Work surface changed during setup")
+            ),
+            f"final {result.title} surface",
+        )
+        if final_surface != result.surface:
+            raise SetupError(f"{result.title} surface changed during setup")
+        harness_results[index] = result
 
     if companion_tab is not None:
         companion_surface = exactly_one(
@@ -340,27 +444,65 @@ def setup_bench(
         companion_session = f"supa-{companion_surface.lower()}"
 
     sessions = parse_zmx_sessions(run(("zmx", "list")))
-    work_shell_pid = require_session_shell(
-        sessions, work_session, bench_path, run=run
-    )
+    harness_results_with_pids: list[HarnessTabResult] = []
+    for result in harness_results:
+        shell_pid = require_session_shell(sessions, result.session, bench_path, run=run)
+        harness_results_with_pids.append(
+            HarnessTabResult(
+                role=result.role,
+                title=result.title,
+                tab=result.tab,
+                surface=result.surface,
+                session=result.session,
+                shell_pid=shell_pid,
+            )
+        )
     if companion_session is not None:
         companion_shell_pid = require_session_shell(
             sessions, companion_session, bench_path, run=run
         )
 
-    run(("supacode", "tab", "focus", "-w", worktree, "-t", work_tab))
+    work_result = next(result for result in harness_results_with_pids if result.role == "work")
+    run(("supacode", "tab", "focus", "-w", worktree, "-t", work_result.tab))
     return BenchResult(
         worktree=worktree,
-        work_tab=work_tab,
-        work_surface=work_surface,
-        work_session=work_session,
-        work_shell_pid=work_shell_pid,
+        work_tab=work_result.tab,
+        work_surface=work_result.surface,
+        work_session=work_result.session,
+        work_shell_pid=work_result.shell_pid,
+        harness_tabs=tuple(harness_results_with_pids),
         companion_tab=companion_tab,
         companion_surface=companion_surface,
         companion_session=companion_session,
         companion_shell_pid=companion_shell_pid,
         pinned=request.pin,
     )
+
+
+def require_string(value: Any, field: str) -> str:
+    if not isinstance(value, str) or value == "":
+        raise ValueError(f"{field} must be a non-empty string")
+    return value
+
+
+def parse_harness_tabs_json(value: str) -> tuple[HarnessTab, ...]:
+    raw = json.loads(value)
+    if not isinstance(raw, list):
+        raise ValueError("harness tabs must be a JSON array")
+    tabs: list[HarnessTab] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"harness tab {index} must be an object")
+        role = require_string(item.get("role"), f"harness tab {index} role")
+        title = require_string(item.get("title"), f"harness tab {index} title")
+        argv = item.get("argv")
+        if not isinstance(argv, list) or not argv:
+            raise ValueError(f"harness tab {index} argv must be a non-empty array")
+        if not all(isinstance(arg, str) and arg for arg in argv):
+            raise ValueError(f"harness tab {index} argv must contain non-empty strings")
+        tabs.append(HarnessTab(role=role, title=title, argv=tuple(argv)))
+    validate_harness_tabs(tabs)
+    return tuple(tabs)
 
 
 def parse_args(arguments: Sequence[str]) -> BenchRequest:
@@ -370,6 +512,7 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
     parser.add_argument("--color", required=True)
     parser.add_argument("--companion-title")
     parser.add_argument("--companion-command")
+    parser.add_argument("--harness-tabs-json")
     parser.add_argument("--pin", action="store_true")
     parser.add_argument("harness", nargs=argparse.REMAINDER)
     parsed = parser.parse_args(list(arguments))
@@ -378,13 +521,22 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
     harness = tuple(parsed.harness)
     if harness[:1] == ("--",):
         harness = harness[1:]
-    if not harness:
-        parser.error("a harness command is required after --")
+    if parsed.harness_tabs_json is not None and harness:
+        parser.error("--harness-tabs-json cannot be combined with a harness command")
+    if parsed.harness_tabs_json is not None:
+        try:
+            harness_tabs = parse_harness_tabs_json(parsed.harness_tabs_json)
+        except (json.JSONDecodeError, ValueError, SetupError) as error:
+            parser.error(str(error))
+    else:
+        if not harness:
+            parser.error("a harness command is required after --")
+        harness_tabs = (HarnessTab(role="work", title="Work", argv=harness),)
     return BenchRequest(
         path=parsed.path,
         title=parsed.title,
         color=parsed.color,
-        harness=harness,
+        harness_tabs=harness_tabs,
         companion_title=parsed.companion_title,
         companion_command=parsed.companion_command,
         pin=parsed.pin,
