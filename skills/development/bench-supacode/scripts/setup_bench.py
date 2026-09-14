@@ -157,7 +157,7 @@ def require_session_shell(
         raise SetupError(f"Expected zmx session details were not found: {name}")
     try:
         root_pid = int(details["pid"])
-        start_dir = details["start_dir"]
+        start_dir = details.get("start_dir") or details["cwd"]
     except (KeyError, ValueError) as error:
         raise SetupError(f"Incomplete zmx session details for {name}") from error
     if os.path.realpath(start_dir) != os.path.realpath(bench_path):
