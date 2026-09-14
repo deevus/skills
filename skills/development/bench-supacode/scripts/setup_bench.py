@@ -25,6 +25,8 @@ class Runner(Protocol):
 
 HARNESS_ROLES = frozenset({"plan", "work"})
 
+DEFAULT_LAYOUTS_FILE = "~/.supacode/layouts.json"
+
 
 @dataclass(frozen=True)
 class HarnessTab:
@@ -54,6 +56,11 @@ class HarnessTabResult:
 
 
 @dataclass(frozen=True)
+class SavedLayout:
+    tab_ids: frozenset[str]
+
+
+@dataclass(frozen=True)
 class BenchRequest:
     path: str
     title: str
@@ -62,6 +69,7 @@ class BenchRequest:
     companion_title: str | None = None
     companion_command: str | None = None
     pin: bool = False
+    layouts_file: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,8 +85,14 @@ class BenchResult:
     companion_session: str | None
     companion_shell_pid: int | None
     pinned: bool
+    closed_restored_tabs: tuple[str, ...]
 
-    def as_dict(self) -> dict[str, str | int | bool | None | list[dict[str, str | int]]]:
+    def as_dict(
+        self,
+    ) -> dict[
+        str,
+        str | int | bool | None | list[str] | list[dict[str, str | int]],
+    ]:
         return {
             "worktree": self.worktree,
             "work_tab": self.work_tab,
@@ -91,6 +105,7 @@ class BenchResult:
             "companion_session": self.companion_session,
             "companion_shell_pid": self.companion_shell_pid,
             "pinned": self.pinned,
+            "closed_restored_tabs": list(self.closed_restored_tabs),
         }
 
 
@@ -115,10 +130,45 @@ def normalized_path(path: str) -> str:
     return os.path.abspath(os.path.expanduser(path)).rstrip(os.sep) or os.sep
 
 
+def layouts_key(path: str) -> str:
+    """Return Supacode's layouts.json key for a local worktree path."""
+    return normalized_path(path).rstrip(os.sep) + os.sep
+
+
 def worktree_id(path: str) -> str:
     """Return Supacode's percent-encoded id for a local worktree path."""
-    normalized = normalized_path(path).rstrip(os.sep) + os.sep
-    return quote(normalized, safe="")
+    return quote(layouts_key(path), safe="")
+
+
+def load_saved_layout(path: str, layouts_file: str) -> SavedLayout | None:
+    """Load saved Supacode tab ids for a worktree path without mutating layouts."""
+    expanded_layouts_file = os.path.abspath(os.path.expanduser(layouts_file))
+    try:
+        with open(expanded_layouts_file, encoding="utf-8") as file:
+            layouts = json.load(file)
+    except FileNotFoundError:
+        return None
+    except json.JSONDecodeError:
+        return None
+    except OSError as error:
+        raise SetupError(f"Could not read Supacode layouts: {error}") from error
+
+    if not isinstance(layouts, dict):
+        return None
+    entry = layouts.get(layouts_key(path))
+    if not isinstance(entry, dict):
+        return None
+    tabs = entry.get("tabs")
+    if not isinstance(tabs, list):
+        return None
+    tab_ids = frozenset(
+        tab["id"]
+        for tab in tabs
+        if isinstance(tab, dict) and isinstance(tab.get("id"), str) and tab["id"]
+    )
+    if not tab_ids:
+        return None
+    return SavedLayout(tab_ids)
 
 
 def output_lines(output: str) -> list[str]:
@@ -235,6 +285,73 @@ def require_short_session(name: str, *, run: Runner) -> None:
         raise SetupError(f"Expected zmx session was not found: {name}")
 
 
+def child_pids(ps_output: str, parent: int) -> list[int]:
+    children: list[int] = []
+    for line in ps_output.splitlines():
+        fields = line.split()
+        if len(fields) != 2:
+            continue
+        try:
+            pid = int(fields[0])
+            ppid = int(fields[1])
+        except ValueError:
+            continue
+        if ppid == parent:
+            children.append(pid)
+    return children
+
+
+def close_restored_tabs(
+    saved: SavedLayout,
+    tabs: Sequence[str],
+    worktree: str,
+    bench_path: str,
+    *,
+    run: Runner,
+) -> tuple[str, tuple[str, ...]]:
+    restored_tabs = [tab for tab in tabs if tab in saved.tab_ids]
+    fresh_tabs = [tab for tab in tabs if tab not in saved.tab_ids]
+    if len(fresh_tabs) != 1:
+        raise SetupError(
+            "Expected exactly one fresh default tab beside "
+            f"{len(restored_tabs)} restored tab(s); found {len(fresh_tabs)}"
+        )
+    fresh_tab = fresh_tabs[0]
+    if not restored_tabs:
+        return fresh_tab, ()
+
+    restored_sessions: list[tuple[str, str]] = []
+    for tab in restored_tabs:
+        surface = exactly_one(
+            output_lines(run(("supacode", "surface", "list", "-w", worktree, "-t", tab))),
+            f"surface in restored tab {tab}",
+        )
+        restored_sessions.append((tab, f"supa-{surface.lower()}"))
+
+    sessions = parse_zmx_sessions(run(("zmx", "list")))
+    shell_pids: list[tuple[str, int]] = []
+    for _tab, session in restored_sessions:
+        shell_pid = require_session_shell(sessions, session, bench_path, run=run)
+        clients = sessions[session].get("clients")
+        if clients != "1":
+            raise SetupError(f"zmx session {session} has {clients or 'unknown'} clients attached")
+        shell_pids.append((session, shell_pid))
+
+    ps_output = run(("ps", "-axo", "pid=,ppid="))
+    for session, shell_pid in shell_pids:
+        children = child_pids(ps_output, shell_pid)
+        if children:
+            raise SetupError(f"zmx session {session} shell is busy: {children}")
+
+    for tab, _session in restored_sessions:
+        run(("supacode", "tab", "close", "-w", worktree, "-t", tab))
+
+    remaining_tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
+    if remaining_tabs != [fresh_tab]:
+        raise SetupError(f"Unexpected tabs after closing restored tabs: {remaining_tabs!r}")
+    return fresh_tab, tuple(restored_tabs)
+
+
 def setup_bench(
     request: BenchRequest,
     *,
@@ -254,6 +371,10 @@ def setup_bench(
     existing = output_lines(run(("supacode", "worktree", "list")))
     if worktree in existing:
         raise SetupError(f"Bench worktree is already registered: {worktree}")
+    saved_layout = load_saved_layout(
+        bench_path,
+        request.layouts_file or DEFAULT_LAYOUTS_FILE,
+    )
 
     run(("supacode", "repo", "open", bench_path))
     wait_for_worktree(
@@ -291,10 +412,18 @@ def setup_bench(
         )
     run(("supacode", "worktree", "focus", "-w", worktree))
 
-    default_tab = exactly_one(
-        output_lines(run(("supacode", "tab", "list", "-w", worktree))),
-        "default tab",
-    )
+    tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
+    if saved_layout is None:
+        default_tab = exactly_one(tabs, "default tab")
+        closed_restored_tabs: tuple[str, ...] = ()
+    else:
+        default_tab, closed_restored_tabs = close_restored_tabs(
+            saved_layout,
+            tabs,
+            worktree,
+            bench_path,
+            run=run,
+        )
     default_surface = exactly_one(
         output_lines(
             run(
@@ -476,6 +605,7 @@ def setup_bench(
         companion_session=companion_session,
         companion_shell_pid=companion_shell_pid,
         pinned=request.pin,
+        closed_restored_tabs=closed_restored_tabs,
     )
 
 
@@ -513,6 +643,7 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
     parser.add_argument("--companion-title")
     parser.add_argument("--companion-command")
     parser.add_argument("--harness-tabs-json")
+    parser.add_argument("--layouts-file")
     parser.add_argument("--pin", action="store_true")
     parser.add_argument("harness", nargs=argparse.REMAINDER)
     parsed = parser.parse_args(list(arguments))
@@ -540,6 +671,7 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
         companion_title=parsed.companion_title,
         companion_command=parsed.companion_command,
         pin=parsed.pin,
+        layouts_file=parsed.layouts_file,
     )
 
 
