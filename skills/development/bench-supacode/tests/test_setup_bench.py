@@ -562,6 +562,19 @@ class SetupBenchTests(unittest.TestCase):
         with self.assertRaisesRegex(SETUP_BENCH.SetupError, "Companion surface"):
             SETUP_BENCH.setup_bench(companion_request(), run=runner)
 
+    def test_accepts_zmx_cwd_session_details(self) -> None:
+        runner = happy_runner()
+        runner.responses[("zmx", "list")][0] = (
+            f"name={WORK_SESSION}\tpid={WORK_ROOT_PID}\tclients=1"
+            f"\tcreated=1789348149\tcwd={BENCH_PATH}\tcmd=/usr/bin/zsh\n"
+        )
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertEqual(result.work_shell_pid, WORK_SHELL_PID)
+        runner.assert_consumed()
+
+
     def test_rejects_a_backing_session_outside_the_bench_path(self) -> None:
         runner = happy_runner()
         runner.responses[("zmx", "list")][0] = (
