@@ -46,7 +46,7 @@ prompt = "Read {brief}, write a plan, then stop for approval."
 role = "work"
 title = "Work"
 command = ["pi", "--model", "openai-codex/gpt-5.6-astra"]
-prompt = "Read {brief} and the approved plan, then implement."
+# No prompt means the Work tab starts as an empty interactive agent.
 ```
 
 The resolver supports only these roles:
@@ -61,6 +61,19 @@ If no `plan` harness is present, bench creates the existing layout: `Work` plus 
 The `work` role is always required after resolution. If no work harness is configured, it falls back to the existing Work harness default and selection behavior.
 
 A config layer must not define both `[harness]` and `[[harnesses]]` with `role = "work"`. That is ambiguous, so the resolver must report an error.
+
+### Prompt semantics
+
+Prompt defaults depend on the config form.
+
+- In legacy `[harness]`, an omitted `prompt` keeps the current default prompt.
+- In `[[harnesses]]`, an omitted `prompt` means no initial prompt for that role.
+- In `[[harnesses]]`, a provided `prompt` must be a non-empty string.
+- If no `work` role exists, Work falls back to the existing default prompt and selection behavior.
+
+When a role uses `command`, the resolver appends the rendered prompt only when that role has a prompt. When a role has no prompt, the resolver returns the command argv unchanged.
+
+This lets split benches start Work as an empty interactive agent while Plan receives the real brief-driven prompt.
 
 ## Layering and merge behavior
 
@@ -83,8 +96,9 @@ Harnesses merge by role. Within one role, fields layer like the current `[harnes
 
 - a higher-precedence `tool` clears inherited `command` and `permission_mode`
 - a higher-precedence `command` clears inherited `tool` and `permission_mode`
-- `prompt` layers independently
+- a provided `prompt` layers independently
 - `title` layers independently
+- in `[[harnesses]]`, an omitted `prompt` removes any inherited prompt for that role
 
 This means repo config can add or override only the Plan harness without redefining Work. It can also override the Work harness without affecting Plan.
 
@@ -126,8 +140,8 @@ The resolver returns a new `harnesses` array. It also keeps the existing `harnes
     {
       "role": "work",
       "title": "Work",
-      "tool": "pi",
-      "argv": ["pi", "@/tmp/brief.md", "Read ..."],
+      "tool": "custom",
+      "argv": ["pi", "--model", "openai-codex/gpt-5.6-astra"],
       "available": ["claude", "pi"],
       "selection_required": false
     }
@@ -184,6 +198,20 @@ Setup fails if any required harness tab fails. Final focus must return to `Work`
 
 The companion remains generic. UI adapters must not detect Comview or Hunk, build diff commands, or add review semantics.
 
+## Version 1 handoff
+
+The first split-harness workflow is human-mediated.
+
+Bench starts all first-class tabs during setup:
+
+- `Plan` starts with its configured prompt.
+- `Work` can start with no prompt, as an empty interactive agent.
+- `Diff` starts when a diff companion is selected.
+
+The Plan prompt tells the Plan agent to write the plan and stop for approval. After approval, the Plan agent must produce the exact prompt that the human should paste into Work. Bench does not signal Work directly in version 1.
+
+A later version can add a machine-mediated handoff. For example, Plan could write a known plan artifact or ready marker, and Work could start after that marker exists. That behavior is out of scope for the first implementation.
+
 ## Validation
 
 The resolver reports an error for:
@@ -197,6 +225,7 @@ The resolver reports an error for:
 - empty `title` values
 - empty strings or empty `command` arrays
 - unsupported placeholders other than `{brief}`
+- a provided `prompt` that is not a non-empty string
 - missing executables for configured harnesses
 
 ## Migration plan
@@ -228,7 +257,7 @@ prompt = "Read {brief}, write a plan, then stop for approval."
 [[harnesses]]
 role = "work"
 command = ["pi", "--model", "openai-codex/gpt-5.6-astra"]
-prompt = "Read {brief} and the approved plan, then implement."
+# No prompt: Plan will produce the exact prompt to paste into this tab.
 
 [diff]
 tool = "comview"
