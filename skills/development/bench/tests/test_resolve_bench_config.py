@@ -75,6 +75,18 @@ class ResolveBenchConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(RESOLVER.ConfigError, message):
             self.resolve(*extra_args)
 
+    def test_resolve_config_accepts_plan_harness_tool_compatibility_parameter(self) -> None:
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            result = RESOLVER.resolve_config(
+                repo_root=self.repo,
+                brief=self.brief,
+                plan_harness_tool=None,
+                which=lambda _name: None,
+            )
+
+        self.assertEqual(result["harness"]["role"], "work")
+        self.assertEqual(result["harnesses"], [result["harness"]])
+
     def test_missing_files_default_to_ask_harness_and_auto_none_diff(self) -> None:
         result = self.resolve()
 

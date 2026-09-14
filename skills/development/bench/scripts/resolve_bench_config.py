@@ -316,6 +316,7 @@ def resolve_config(
     repo_root: pathlib.Path,
     brief: pathlib.Path,
     harness_tool: str | None = None,
+    plan_harness_tool: str | None = None,
     diff_tool: str | None = None,
     which: Callable[[str], str | None] | None = None,
 ) -> dict[str, Any]:
