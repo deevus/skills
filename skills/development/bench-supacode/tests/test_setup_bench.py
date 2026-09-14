@@ -30,6 +30,16 @@ COMPANION_ROOT_PID = 5678
 COMPANION_SHELL_PID = 5679
 HARNESS = ("claude", "--permission-mode", "plan", "Read /tmp/brief.md")
 COMPANION_COMMAND = "companion-tool --mode observe --label opaque-pass-through"
+PLAN_TAB = WORK_TAB
+PLAN_SURFACE = WORK_SURFACE
+PLAN_SESSION = WORK_SESSION
+WORK2_TAB = "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD"
+WORK2_SURFACE = "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE"
+WORK2_SESSION = "supa-eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+WORK2_ROOT_PID = 9012
+WORK2_SHELL_PID = 9013
+PLAN_HARNESS = ("claude", "--permission-mode", "plan", "Plan")
+WORK_HARNESS = ("pi", "--model", "openai-codex/gpt-5.6-astra")
 
 
 class FakeRunner:
@@ -57,11 +67,16 @@ class FakeRunner:
             raise AssertionError(f"Unused command responses: {remaining!r}")
 
 
+def harness_tab(role: str, title: str, argv: tuple[str, ...]):
+    return SETUP_BENCH.HarnessTab(role=role, title=title, argv=argv)
+
+
 def request(
     *,
     companion_title: str | None = None,
     companion_command: str | None = None,
     pin: bool = False,
+    harness_tabs: tuple[object, ...] | None = None,
 ):
     return SETUP_BENCH.BenchRequest(
         path=BENCH_PATH,
@@ -69,7 +84,7 @@ def request(
         color="blue",
         companion_title=companion_title,
         companion_command=companion_command,
-        harness=HARNESS,
+        harness_tabs=harness_tabs or (harness_tab("work", "Work", HARNESS),),
         pin=pin,
     )
 
@@ -87,7 +102,9 @@ def happy_runner(
     companion_title: str | None = None,
     companion_command: str | None = None,
     pin: bool = False,
+    harness_tabs: tuple[object, ...] | None = None,
 ) -> FakeRunner:
+    harness_tabs = harness_tabs or (harness_tab("work", "Work", HARNESS),)
     has_companion = companion_title is not None and companion_command is not None
     runner = FakeRunner()
     runner.add(("supacode", "worktree", "list"), "", f"{WORKTREE}\n")
@@ -112,7 +129,12 @@ def happy_runner(
             "",
         )
     runner.add(("supacode", "worktree", "focus", "-w", WORKTREE), "")
-    final_tabs = f"{WORK_TAB}\n{COMPANION_TAB}\n" if has_companion else f"{WORK_TAB}\n"
+    created_tabs = [WORK_TAB]
+    if len(harness_tabs) > 1:
+        created_tabs.append(WORK2_TAB)
+    if has_companion:
+        created_tabs.append(COMPANION_TAB)
+    final_tabs = "".join(f"{tab}\n" for tab in created_tabs)
     runner.add(
         ("supacode", "tab", "list", "-w", WORKTREE),
         f"{WORK_TAB}\n",
@@ -124,11 +146,33 @@ def happy_runner(
         f"{WORK_SURFACE}\n",
     )
     runner.add(("zmx", "list", "--short"), f"other\n{WORK_SESSION}\n")
+    first = harness_tabs[0]
     runner.add(
-        ("supacode", "tab", "rename", "-w", WORKTREE, "-t", WORK_TAB, "--title", "Work"),
+        ("supacode", "tab", "rename", "-w", WORKTREE, "-t", WORK_TAB, "--title", first.title),
         "",
     )
-    runner.add(("zmx", "run", WORK_SESSION, "-d", *HARNESS), "command sent!\n")
+    runner.add(("zmx", "run", WORK_SESSION, "-d", *first.argv), "command sent!\n")
+    if len(harness_tabs) > 1:
+        second = harness_tabs[1]
+        runner.add(
+            (
+                "supacode",
+                "tab",
+                "new",
+                "-w",
+                WORKTREE,
+                "--title",
+                second.title,
+            ),
+            f"{WORK2_TAB}\n",
+        )
+        runner.add(
+            ("supacode", "surface", "list", "-w", WORKTREE, "-t", WORK2_TAB),
+            f"{WORK2_SURFACE}\n",
+            f"{WORK2_SURFACE}\n",
+        )
+        runner.add(("zmx", "list", "--short"), f"other\n{WORK_SESSION}\n{WORK2_SESSION}\n")
+        runner.add(("zmx", "run", WORK2_SESSION, "-d", *second.argv), "command sent!\n")
     if has_companion:
         runner.add(
             (
@@ -152,6 +196,11 @@ def happy_runner(
         f"name={WORK_SESSION}\tpid={WORK_ROOT_PID}\tclients=1"
         f"\tstart_dir={BENCH_PATH}\n"
     )
+    if len(harness_tabs) > 1:
+        zmx_details += (
+            f"name={WORK2_SESSION}\tpid={WORK2_ROOT_PID}\tclients=1"
+            f"\tstart_dir={BENCH_PATH}\n"
+        )
     if has_companion:
         zmx_details += (
             f"name={COMPANION_SESSION}\tpid={COMPANION_ROOT_PID}\tclients=1"
@@ -163,13 +212,21 @@ def happy_runner(
         ("lsof", "-a", "-d", "cwd", "-p", str(WORK_SHELL_PID), "-Fn"),
         f"p{WORK_SHELL_PID}\nfcwd\nn{BENCH_PATH}\n",
     )
+    if len(harness_tabs) > 1:
+        runner.add(("pgrep", "-P", str(WORK2_ROOT_PID)), f"{WORK2_SHELL_PID}\n")
+        runner.add(
+            ("lsof", "-a", "-d", "cwd", "-p", str(WORK2_SHELL_PID), "-Fn"),
+            f"p{WORK2_SHELL_PID}\nfcwd\nn{BENCH_PATH}\n",
+        )
     if has_companion:
         runner.add(("pgrep", "-P", str(COMPANION_ROOT_PID)), f"{COMPANION_SHELL_PID}\n")
         runner.add(
             ("lsof", "-a", "-d", "cwd", "-p", str(COMPANION_SHELL_PID), "-Fn"),
             f"p{COMPANION_SHELL_PID}\nfcwd\nn{BENCH_PATH}\n",
         )
-    runner.add(("supacode", "tab", "focus", "-w", WORKTREE, "-t", WORK_TAB), "")
+    work_tab = next(tab for tab in harness_tabs if tab.role == "work")
+    work_tab_id = WORK_TAB if work_tab is harness_tabs[0] else WORK2_TAB
+    runner.add(("supacode", "tab", "focus", "-w", WORKTREE, "-t", work_tab_id), "")
     return runner
 
 
@@ -187,6 +244,16 @@ class SetupBenchTests(unittest.TestCase):
                 "work_surface": WORK_SURFACE,
                 "work_session": WORK_SESSION,
                 "work_shell_pid": WORK_SHELL_PID,
+                "harness_tabs": [
+                    {
+                        "role": "work",
+                        "title": "Work",
+                        "tab": WORK_TAB,
+                        "surface": WORK_SURFACE,
+                        "session": WORK_SESSION,
+                        "shell_pid": WORK_SHELL_PID,
+                    }
+                ],
                 "companion_tab": None,
                 "companion_surface": None,
                 "companion_session": None,
@@ -202,6 +269,83 @@ class SetupBenchTests(unittest.TestCase):
         )
         runner.assert_consumed()
 
+    def test_split_harness_reuses_default_tab_for_plan_and_focuses_work(self) -> None:
+        harness_tabs = (
+            harness_tab("plan", "Plan", PLAN_HARNESS),
+            harness_tab("work", "Work", WORK_HARNESS),
+        )
+        runner = happy_runner(harness_tabs=harness_tabs)
+
+        result = SETUP_BENCH.setup_bench(request(harness_tabs=harness_tabs), run=runner)
+
+        self.assertEqual(result.work_tab, WORK2_TAB)
+        self.assertEqual(result.work_session, WORK2_SESSION)
+        self.assertIn(
+            ("supacode", "tab", "rename", "-w", WORKTREE, "-t", PLAN_TAB, "--title", "Plan"),
+            runner.commands,
+        )
+        self.assertIn(("zmx", "run", PLAN_SESSION, "-d", *PLAN_HARNESS), runner.commands)
+        self.assertIn(
+            ("supacode", "tab", "new", "-w", WORKTREE, "--title", "Work"),
+            runner.commands,
+        )
+        self.assertIn(("zmx", "run", WORK2_SESSION, "-d", *WORK_HARNESS), runner.commands)
+        self.assertEqual(
+            result.as_dict()["harness_tabs"],
+            [
+                {
+                    "role": "plan",
+                    "title": "Plan",
+                    "tab": PLAN_TAB,
+                    "surface": PLAN_SURFACE,
+                    "session": PLAN_SESSION,
+                    "shell_pid": WORK_SHELL_PID,
+                },
+                {
+                    "role": "work",
+                    "title": "Work",
+                    "tab": WORK2_TAB,
+                    "surface": WORK2_SURFACE,
+                    "session": WORK2_SESSION,
+                    "shell_pid": WORK2_SHELL_PID,
+                },
+            ],
+        )
+        self.assertEqual(
+            runner.commands[-1],
+            ("supacode", "tab", "focus", "-w", WORKTREE, "-t", WORK2_TAB),
+        )
+        runner.assert_consumed()
+
+    def test_split_harness_still_supports_a_companion_tab(self) -> None:
+        harness_tabs = (
+            harness_tab("plan", "Plan", PLAN_HARNESS),
+            harness_tab("work", "Work", WORK_HARNESS),
+        )
+        runner = happy_runner(
+            companion_title=COMPANION_TITLE,
+            companion_command=COMPANION_COMMAND,
+            harness_tabs=harness_tabs,
+        )
+
+        result = SETUP_BENCH.setup_bench(
+            request(
+                companion_title=COMPANION_TITLE,
+                companion_command=COMPANION_COMMAND,
+                harness_tabs=harness_tabs,
+            ),
+            run=runner,
+        )
+
+        self.assertEqual(result.work_tab, WORK2_TAB)
+        self.assertEqual(result.companion_tab, COMPANION_TAB)
+        self.assertEqual(result.companion_session, COMPANION_SESSION)
+        self.assertEqual(
+            runner.commands[-1],
+            ("supacode", "tab", "focus", "-w", WORKTREE, "-t", WORK2_TAB),
+        )
+        runner.assert_consumed()
+
     def test_named_companion_creates_second_tab_and_returns_resource_ids(self) -> None:
         runner = happy_runner(
             companion_title=COMPANION_TITLE,
@@ -210,21 +354,11 @@ class SetupBenchTests(unittest.TestCase):
 
         result = SETUP_BENCH.setup_bench(companion_request(), run=runner)
 
-        self.assertEqual(
-            result.as_dict(),
-            {
-                "worktree": WORKTREE,
-                "work_tab": WORK_TAB,
-                "work_surface": WORK_SURFACE,
-                "work_session": WORK_SESSION,
-                "work_shell_pid": WORK_SHELL_PID,
-                "companion_tab": COMPANION_TAB,
-                "companion_surface": COMPANION_TAB,
-                "companion_session": COMPANION_SESSION,
-                "companion_shell_pid": COMPANION_SHELL_PID,
-                "pinned": False,
-            },
-        )
+        self.assertEqual(result.work_tab, WORK_TAB)
+        self.assertEqual(result.companion_tab, COMPANION_TAB)
+        self.assertEqual(result.companion_surface, COMPANION_TAB)
+        self.assertEqual(result.companion_session, COMPANION_SESSION)
+        self.assertEqual(result.companion_shell_pid, COMPANION_SHELL_PID)
         self.assertIn(
             (
                 "supacode",
@@ -276,7 +410,7 @@ class SetupBenchTests(unittest.TestCase):
             color="blue",
             companion_title=None,
             companion_command=None,
-            harness=HARNESS,
+            harness_tabs=(harness_tab("work", "Work", HARNESS),),
         )
 
         with mock.patch.dict("os.environ", {"HOME": "/tmp"}):
@@ -291,6 +425,17 @@ class SetupBenchTests(unittest.TestCase):
         with self.assertRaisesRegex(SETUP_BENCH.SetupError, "companion"):
             SETUP_BENCH.setup_bench(
                 request(companion_title=COMPANION_TITLE, companion_command=None),
+                run=runner,
+            )
+
+        self.assertEqual(runner.commands, [])
+
+    def test_refuses_request_without_work_harness_before_opening_repo(self) -> None:
+        runner = FakeRunner()
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "work"):
+            SETUP_BENCH.setup_bench(
+                request(harness_tabs=(harness_tab("plan", "Plan", PLAN_HARNESS),)),
                 run=runner,
             )
 
@@ -350,6 +495,17 @@ class SetupBenchTests(unittest.TestCase):
             SETUP_BENCH.setup_bench(request(), run=runner)
 
         self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
+
+    def test_rejects_missing_later_harness_zmx_session(self) -> None:
+        harness_tabs = (
+            harness_tab("plan", "Plan", PLAN_HARNESS),
+            harness_tab("work", "Work", WORK_HARNESS),
+        )
+        runner = happy_runner(harness_tabs=harness_tabs)
+        runner.responses[("zmx", "list", "--short")][1] = f"other\n{WORK_SESSION}\n"
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "zmx session"):
+            SETUP_BENCH.setup_bench(request(harness_tabs=harness_tabs), run=runner)
 
     def test_rejects_an_invalid_work_only_final_tab_layout(self) -> None:
         runner = happy_runner()
@@ -417,6 +573,16 @@ class SetupBenchTests(unittest.TestCase):
             work_surface=WORK_SURFACE,
             work_session=WORK_SESSION,
             work_shell_pid=WORK_SHELL_PID,
+            harness_tabs=(
+                SETUP_BENCH.HarnessTabResult(
+                    role="work",
+                    title="Work",
+                    tab=WORK_TAB,
+                    surface=WORK_SURFACE,
+                    session=WORK_SESSION,
+                    shell_pid=WORK_SHELL_PID,
+                ),
+            ),
             companion_tab=None,
             companion_surface=None,
             companion_session=None,
@@ -448,8 +614,67 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(parsed.companion_title, COMPANION_TITLE)
         self.assertEqual(parsed.companion_command, COMPANION_COMMAND)
-        self.assertEqual(parsed.harness, HARNESS)
+        self.assertEqual(parsed.harness_tabs, (harness_tab("work", "Work", HARNESS),))
         self.assertTrue(parsed.pin)
+
+    def test_cli_parses_harness_tabs_json(self) -> None:
+        parsed = SETUP_BENCH.parse_args(
+            [
+                "--path",
+                BENCH_PATH,
+                "--title",
+                "Example task",
+                "--color",
+                "blue",
+                "--harness-tabs-json",
+                json.dumps(
+                    [
+                        {"role": "plan", "title": "Plan", "argv": list(PLAN_HARNESS)},
+                        {"role": "work", "title": "Work", "argv": list(WORK_HARNESS)},
+                    ]
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            parsed.harness_tabs,
+            (
+                harness_tab("plan", "Plan", PLAN_HARNESS),
+                harness_tab("work", "Work", WORK_HARNESS),
+            ),
+        )
+
+    def test_cli_rejects_harness_tabs_json_without_work_role(self) -> None:
+        with self.assertRaises(SystemExit):
+            SETUP_BENCH.parse_args(
+                [
+                    "--path",
+                    BENCH_PATH,
+                    "--title",
+                    "Example task",
+                    "--color",
+                    "blue",
+                    "--harness-tabs-json",
+                    json.dumps([{"role": "plan", "title": "Plan", "argv": list(PLAN_HARNESS)}]),
+                ]
+            )
+
+    def test_cli_rejects_harness_tabs_json_with_argv_remainder(self) -> None:
+        with self.assertRaises(SystemExit):
+            SETUP_BENCH.parse_args(
+                [
+                    "--path",
+                    BENCH_PATH,
+                    "--title",
+                    "Example task",
+                    "--color",
+                    "blue",
+                    "--harness-tabs-json",
+                    json.dumps([{"role": "work", "title": "Work", "argv": list(WORK_HARNESS)}]),
+                    "--",
+                    *HARNESS,
+                ]
+            )
 
     def test_cli_rejects_half_specified_companion_flags(self) -> None:
         with self.assertRaises(SystemExit):
