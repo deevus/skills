@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import pathlib
 import sys
+import tempfile
 import unittest
 from collections import defaultdict, deque
 from collections.abc import Sequence
 from unittest import mock
+from urllib.parse import quote
 
 SCRIPT = pathlib.Path(__file__).parents[1] / "scripts" / "setup_bench.py"
 SPEC = importlib.util.spec_from_file_location("setup_bench", SCRIPT)
@@ -40,6 +43,17 @@ WORK2_ROOT_PID = 9012
 WORK2_SHELL_PID = 9013
 PLAN_HARNESS = ("claude", "--permission-mode", "plan", "Plan")
 WORK_HARNESS = ("pi", "--model", "openai-codex/gpt-5.6-astra")
+OLD_TAB = "11111111-1111-1111-1111-111111111111"
+OLD_SURFACE = "22222222-2222-2222-2222-222222222222"
+OLD_SESSION = "supa-22222222-2222-2222-2222-222222222222"
+OLD_ROOT_PID = 2234
+OLD_SHELL_PID = 2235
+OLD2_TAB = "33333333-3333-3333-3333-333333333333"
+OLD2_SURFACE = "44444444-4444-4444-4444-444444444444"
+OLD2_SESSION = "supa-44444444-4444-4444-4444-444444444444"
+OLD2_ROOT_PID = 4434
+OLD2_SHELL_PID = 4435
+LAYOUTS_KEY = BENCH_PATH + "/"
 
 
 class FakeRunner:
@@ -77,6 +91,7 @@ def request(
     companion_command: str | None = None,
     pin: bool = False,
     harness_tabs: tuple[object, ...] | None = None,
+    layouts_file: str | None = None,
 ):
     return SETUP_BENCH.BenchRequest(
         path=BENCH_PATH,
@@ -86,6 +101,7 @@ def request(
         companion_command=companion_command,
         harness_tabs=harness_tabs or (harness_tab("work", "Work", HARNESS),),
         pin=pin,
+        layouts_file=layouts_file,
     )
 
 
@@ -230,7 +246,63 @@ def happy_runner(
     return runner
 
 
+def layout_entry(*tabs: tuple[str, str | None]) -> dict[str, object]:
+    return {"tabs": [{"id": tab, "surfaceID": surface} for tab, surface in tabs]}
+
+
+def write_layouts(home: str, value: dict[str, object] | str) -> str:
+    layouts_dir = pathlib.Path(home) / ".supacode"
+    layouts_dir.mkdir(parents=True, exist_ok=True)
+    layouts_file = layouts_dir / "layouts.json"
+    if isinstance(value, str):
+        layouts_file.write_text(value)
+    else:
+        layouts_file.write_text(json.dumps(value))
+    return str(layouts_file)
+
+
+def ps_output(*pairs: tuple[int, int]) -> str:
+    return "".join(f"{pid} {ppid}\n" for pid, ppid in pairs)
+
+
+def restored_runner(
+    runner: FakeRunner,
+    restored: tuple[tuple[str, str, str, int, int], ...],
+    *,
+    fresh_first: bool = False,
+) -> FakeRunner:
+    tab_list = runner.responses[("supacode", "tab", "list", "-w", WORKTREE)]
+    restored_tabs = [tab for tab, _surface, _session, _root_pid, _shell_pid in restored]
+    initial_tabs = [WORK_TAB, *restored_tabs] if fresh_first else [*restored_tabs, WORK_TAB]
+    tab_list[0] = "".join(f"{tab}\n" for tab in initial_tabs)
+    tab_list.insert(1, f"{WORK_TAB}\n")
+
+    restored_details = ""
+    for tab, surface, session, root_pid, shell_pid in restored:
+        runner.add(("supacode", "surface", "list", "-w", WORKTREE, "-t", tab), f"{surface}\n")
+        runner.add(("pgrep", "-P", str(root_pid)), f"{shell_pid}\n")
+        runner.add(
+            ("lsof", "-a", "-d", "cwd", "-p", str(shell_pid), "-Fn"),
+            f"p{shell_pid}\nfcwd\nn{BENCH_PATH}\n",
+        )
+        runner.add(("supacode", "tab", "close", "-w", WORKTREE, "-t", tab), "")
+        restored_details += (
+            f"name={session}\tpid={root_pid}\tclients=1"
+            f"\tstart_dir={BENCH_PATH}\n"
+        )
+    runner.responses[("zmx", "list")].appendleft(restored_details)
+    runner.add(("ps", "-axo", "pid=,ppid="), ps_output())
+    return runner
+
+
 class SetupBenchTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.home_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.home_dir.cleanup)
+        self.home_patch = mock.patch.dict(os.environ, {"HOME": self.home_dir.name})
+        self.home_patch.start()
+        self.addCleanup(self.home_patch.stop)
+
     def test_work_only_reuses_default_tab_and_returns_nullable_companion_fields(self) -> None:
         runner = happy_runner()
 
@@ -259,6 +331,7 @@ class SetupBenchTests(unittest.TestCase):
                 "companion_session": None,
                 "companion_shell_pid": None,
                 "pinned": False,
+                "closed_restored_tabs": [],
             },
         )
         self.assertIn(("zmx", "run", WORK_SESSION, "-d", *HARNESS), runner.commands)
@@ -411,6 +484,7 @@ class SetupBenchTests(unittest.TestCase):
             companion_title=None,
             companion_command=None,
             harness_tabs=(harness_tab("work", "Work", HARNESS),),
+            layouts_file=str(pathlib.Path(self.home_dir.name) / ".supacode" / "layouts.json"),
         )
 
         with mock.patch.dict("os.environ", {"HOME": "/tmp"}):
@@ -468,6 +542,245 @@ class SetupBenchTests(unittest.TestCase):
             SETUP_BENCH.setup_bench(request(), run=runner)
 
         self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
+
+
+    def test_closes_idle_restored_tabs_and_reports_them(self) -> None:
+        write_layouts(
+            self.home_dir.name,
+            {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE), (OLD2_TAB, OLD2_SURFACE))},
+        )
+        restored = (
+            (OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),
+            (OLD2_TAB, OLD2_SURFACE, OLD2_SESSION, OLD2_ROOT_PID, OLD2_SHELL_PID),
+        )
+        runner = restored_runner(happy_runner(), restored)
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertEqual(result.closed_restored_tabs, (OLD_TAB, OLD2_TAB))
+        close_commands = [
+            ("supacode", "tab", "close", "-w", WORKTREE, "-t", OLD_TAB),
+            ("supacode", "tab", "close", "-w", WORKTREE, "-t", OLD2_TAB),
+        ]
+        restored_lsof_and_ps = [
+            ("lsof", "-a", "-d", "cwd", "-p", str(OLD_SHELL_PID), "-Fn"),
+            ("lsof", "-a", "-d", "cwd", "-p", str(OLD2_SHELL_PID), "-Fn"),
+            ("ps", "-axo", "pid=,ppid="),
+        ]
+        self.assertLess(
+            max(runner.commands.index(command) for command in restored_lsof_and_ps),
+            min(runner.commands.index(command) for command in close_commands),
+        )
+        self.assertLess(
+            max(runner.commands.index(command) for command in close_commands),
+            runner.commands.index(
+                ("supacode", "tab", "rename", "-w", WORKTREE, "-t", WORK_TAB, "--title", "Work")
+            ),
+        )
+        runner.assert_consumed()
+
+    def test_identifies_fresh_tab_by_id_not_position(self) -> None:
+        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+        runner = restored_runner(
+            happy_runner(),
+            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+            fresh_first=True,
+        )
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertEqual(result.work_tab, WORK_TAB)
+        self.assertEqual(result.closed_restored_tabs, (OLD_TAB,))
+        runner.assert_consumed()
+
+    def test_saved_layout_present_but_nothing_restored_uses_default_path(self) -> None:
+        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+        runner = happy_runner()
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertEqual(result.closed_restored_tabs, ())
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
+        runner.assert_consumed()
+
+    def test_ignores_saved_layouts_for_other_paths(self) -> None:
+        write_layouts(self.home_dir.name, {"/tmp/other bench/": layout_entry((OLD_TAB, OLD_SURFACE))})
+        runner = happy_runner()
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertEqual(result.closed_restored_tabs, ())
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
+        runner.assert_consumed()
+
+    def test_undecodable_layouts_file_is_treated_as_no_saved_layout(self) -> None:
+        write_layouts(self.home_dir.name, "not json")
+        runner = happy_runner()
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertEqual(result.closed_restored_tabs, ())
+        runner.assert_consumed()
+
+    def test_reads_saved_layout_before_opening_repo(self) -> None:
+        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+        runner = restored_runner(
+            happy_runner(),
+            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+        )
+
+        def run(command: Sequence[str]) -> str:
+            if tuple(command) == ("supacode", "repo", "open", BENCH_PATH):
+                write_layouts(self.home_dir.name, {})
+            return runner(command)
+
+        result = SETUP_BENCH.setup_bench(request(), run=run)
+
+        self.assertEqual(result.closed_restored_tabs, (OLD_TAB,))
+        runner.assert_consumed()
+
+    def test_refuses_saved_layout_when_fresh_tab_count_is_not_one(self) -> None:
+        cases = {
+            "zero fresh": f"{OLD_TAB}\n",
+            "two fresh": f"{OLD_TAB}\n{WORK_TAB}\n{WORK2_TAB}\n",
+        }
+        for name, tabs in cases.items():
+            with self.subTest(name=name):
+                write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+                runner = happy_runner()
+                runner.responses[("supacode", "tab", "list", "-w", WORKTREE)][0] = tabs
+
+                with self.assertRaisesRegex(SETUP_BENCH.SetupError, "fresh default tab"):
+                    SETUP_BENCH.setup_bench(request(), run=runner)
+
+                self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
+                self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
+
+    def test_refuses_restored_tab_with_two_surfaces(self) -> None:
+        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+        runner = restored_runner(
+            happy_runner(),
+            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+        )
+        runner.responses[("supacode", "surface", "list", "-w", WORKTREE, "-t", OLD_TAB)][0] = (
+            f"{OLD_SURFACE}\n{OLD2_SURFACE}\n"
+        )
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "surface in restored tab"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
+
+    def test_refuses_restored_tab_whose_shell_cwd_left_bench(self) -> None:
+        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+        runner = restored_runner(
+            happy_runner(),
+            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+        )
+        runner.responses[("lsof", "-a", "-d", "cwd", "-p", str(OLD_SHELL_PID), "-Fn")][0] = (
+            f"p{OLD_SHELL_PID}\nfcwd\nn/tmp/wrong\n"
+        )
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "shell starts outside"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
+
+    def test_refuses_restored_tab_with_busy_shell(self) -> None:
+        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+        runner = restored_runner(
+            happy_runner(),
+            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+        )
+        runner.responses[("ps", "-axo", "pid=,ppid=")][0] = ps_output((9999, OLD_SHELL_PID))
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "shell is busy"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
+
+    def test_refuses_restored_tab_with_multiple_clients(self) -> None:
+        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+        runner = restored_runner(
+            happy_runner(),
+            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+        )
+        runner.responses[("zmx", "list")][0] = (
+            f"name={OLD_SESSION}\tpid={OLD_ROOT_PID}\tclients=2\tstart_dir={BENCH_PATH}\n"
+        )
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "clients attached"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
+
+    def test_checks_every_restored_tab_before_closing_any(self) -> None:
+        write_layouts(
+            self.home_dir.name,
+            {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE), (OLD2_TAB, OLD2_SURFACE))},
+        )
+        runner = restored_runner(
+            happy_runner(),
+            (
+                (OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),
+                (OLD2_TAB, OLD2_SURFACE, OLD2_SESSION, OLD2_ROOT_PID, OLD2_SHELL_PID),
+            ),
+        )
+        runner.responses[("supacode", "surface", "list", "-w", WORKTREE, "-t", OLD2_TAB)][0] = (
+            f"{OLD2_SURFACE}\n{WORK_SURFACE}\n"
+        )
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "surface in restored tab"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
+
+    def test_refuses_when_restored_tabs_remain_after_close(self) -> None:
+        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+        runner = restored_runner(
+            happy_runner(),
+            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+        )
+        runner.responses[("supacode", "tab", "list", "-w", WORKTREE)][1] = f"{WORK_TAB}\n{OLD_TAB}\n"
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "Unexpected tabs after closing"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertIn(("supacode", "tab", "close", "-w", WORKTREE, "-t", OLD_TAB), runner.commands)
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
+
+    def test_load_saved_layout_skips_invalid_tabs_and_handles_empty_inputs(self) -> None:
+        layouts_file = write_layouts(
+            self.home_dir.name,
+            {
+                LAYOUTS_KEY: {
+                    "tabs": [
+                        {"id": OLD_TAB, "surfaceID": OLD_SURFACE},
+                        {"id": None, "surfaceID": OLD2_SURFACE},
+                        "not a dict",
+                        {"surfaceID": WORK_SURFACE},
+                        {"id": OLD2_TAB},
+                    ]
+                },
+                "/tmp/empty/": {"tabs": [{"id": None}]},
+                "/tmp/non-list/": {"tabs": "not a list"},
+                "/tmp/not-dict/": [OLD_TAB],
+            },
+        )
+
+        saved = SETUP_BENCH.load_saved_layout(BENCH_PATH, layouts_file)
+
+        self.assertEqual(saved.tab_ids, frozenset({OLD_TAB, OLD2_TAB}))
+        self.assertIsNone(SETUP_BENCH.load_saved_layout("/tmp/empty", layouts_file))
+        self.assertIsNone(SETUP_BENCH.load_saved_layout("/tmp/non-list", layouts_file))
+        self.assertIsNone(SETUP_BENCH.load_saved_layout("/tmp/not-dict", layouts_file))
+        self.assertIsNone(SETUP_BENCH.load_saved_layout("/tmp/missing", layouts_file))
+        self.assertIsNone(SETUP_BENCH.load_saved_layout(BENCH_PATH, "/tmp/no-such-layouts.json"))
+
+    def test_layouts_key_round_trips_to_worktree_id(self) -> None:
+        self.assertEqual(SETUP_BENCH.layouts_key(BENCH_PATH), LAYOUTS_KEY)
+        self.assertEqual(quote(SETUP_BENCH.layouts_key(BENCH_PATH), safe=""), WORKTREE)
+        self.assertEqual(SETUP_BENCH.worktree_id(BENCH_PATH), WORKTREE)
 
     def test_refuses_unexpected_initial_surface_layout(self) -> None:
         runner = happy_runner()
@@ -615,10 +928,13 @@ class SetupBenchTests(unittest.TestCase):
             companion_session=None,
             companion_shell_pid=None,
             pinned=False,
+            closed_restored_tabs=(),
         )
 
         self.assertIsNone(result.as_dict()["companion_tab"])
         self.assertIsNone(result.as_dict()["companion_shell_pid"])
+
+        self.assertEqual(result.as_dict()["closed_restored_tabs"], [])
 
     def test_cli_parses_companion_flags_and_harness_as_argv_remainder(self) -> None:
         parsed = SETUP_BENCH.parse_args(
@@ -643,6 +959,25 @@ class SetupBenchTests(unittest.TestCase):
         self.assertEqual(parsed.companion_command, COMPANION_COMMAND)
         self.assertEqual(parsed.harness_tabs, (harness_tab("work", "Work", HARNESS),))
         self.assertTrue(parsed.pin)
+
+
+    def test_cli_parses_layouts_file(self) -> None:
+        parsed = SETUP_BENCH.parse_args(
+            [
+                "--path",
+                BENCH_PATH,
+                "--title",
+                "Example task",
+                "--color",
+                "blue",
+                "--layouts-file",
+                "/tmp/layouts.json",
+                "--",
+                *HARNESS,
+            ]
+        )
+
+        self.assertEqual(parsed.layouts_file, "/tmp/layouts.json")
 
     def test_cli_parses_harness_tabs_json(self) -> None:
         parsed = SETUP_BENCH.parse_args(
@@ -768,6 +1103,8 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(json.loads(output)["work_session"], WORK_SESSION)
         self.assertEqual(json.loads(output)["companion_session"], COMPANION_SESSION)
+
+        self.assertEqual(json.loads(output)["closed_restored_tabs"], [])
         runner.assert_consumed()
 
 

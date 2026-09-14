@@ -24,7 +24,10 @@ doing these UI steps.
 - Create a companion tab only when `bench` provides both companion title and
   companion command.
 - If the worktree already has unexpected tabs or surfaces, stop rather than
-  restructure a bench that may be in use.
+  restructure a bench that may be in use. The only exception is a stale tab
+  restored from the saved Supacode layout for this exact path. The sidecar may
+  close those tabs only after every restored tab proves to be a single idle
+  shell in the bench, and it never writes `layouts.json`.
 - Do not detect viewers, construct companion commands, or add review semantics
   in this skill.
 
@@ -112,10 +115,10 @@ convention from its project topic. Do not invent a generic project-specific
 rule.
 
 The sidecar owns worktree polling, pre-existing-worktree refusal, optional
-pinning, explicit Supacode targets, default-tab and surface checks, `zmx`
-session discovery, harness launch, optional companion creation, structural
-verification, and final Work focus. Do not reproduce those mechanics in the
-calling shell.
+pinning, stale-layout tab cleanup, explicit Supacode targets, default-tab and
+surface checks, `zmx` session discovery, harness launch, optional companion
+creation, structural verification, and final Work focus. Do not reproduce those
+mechanics in the calling shell.
 
 A successful call prints one JSON object with these fields:
 
@@ -148,17 +151,45 @@ A successful call prints one JSON object with these fields:
   "companion_surface": null,
   "companion_session": null,
   "companion_shell_pid": null,
-  "pinned": false
+  "pinned": false,
+  "closed_restored_tabs": []
 }
 ```
 
 The legacy `work_*` fields always describe the Work harness tab. The
 `harness_tabs` array describes every first-class harness tab.
+`closed_restored_tabs` lists any stale restored tab ids that setup closed; report
+those ids in the bench result summary.
 
 When a companion is requested, all `companion_*` fields must be non-null. When
 no companion is requested, all `companion_*` fields must be null. A non-zero
 exit means setup is incomplete. Report the error and inspect the existing state
 instead of guessing or retrying mutations.
+
+## Reused bench paths
+
+Supacode saves a layout for each worktree path in
+`~/.supacode/layouts.json`. The key is the absolute path with a trailing slash.
+If a checkout is removed outside Supacode, or while Supacode is closed, that
+entry can become an orphan. Reopening a bench at the same path can restore the
+old tabs and add one fresh default tab.
+
+The sidecar reads the saved layout before `supacode repo open`. It uses the
+saved tab ids to identify restored tabs after the open. It then keeps the one
+fresh default tab and closes only the restored tabs that prove safe: exactly one
+surface, a matching `supa-<surface>` zmx session, one attached Supacode client,
+a shell that starts and remains in the bench, and no child processes. Closing a
+restored tab kills its zmx session, so these idle checks are mandatory. Any
+failed check aborts setup before closing anything.
+
+The sidecar never edits `layouts.json`. The `--layouts-file` flag exists only as
+a test seam; normal callers should not pass it.
+
+For teardown, remove or archive benches with
+`supacode worktree delete -w <WT>` while the worktree is still open in Supacode.
+That lets Supacode prune the layout entry. Removing the checkout by hand leaves
+an orphan entry, which setup now tolerates. A teardown script is out of scope
+here and is tracked as a follow-up issue after this lands.
 
 ## Target every command
 
