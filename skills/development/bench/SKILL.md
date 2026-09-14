@@ -8,13 +8,13 @@ description: >
 
 # Bench
 
-Create an isolated workspace for a task or review. Resolve the agent harness and
-optional diff companion, route terminal setup to the active UI, and verify that
-the bench is ready before reporting success.
+Create an isolated workspace for a task or review. Resolve agent harness tabs
+and an optional diff companion, route terminal setup to the active UI, and
+verify that the bench is ready before reporting success.
 
 See [configuration](references/configuration.md) for the layered resolver
-contract. The resolver is the source of truth for the harness argv and the diff
-viewer choice.
+contract. The resolver is the source of truth for harness argv arrays and the
+diff viewer choice.
 
 ## Responsibilities
 
@@ -47,24 +47,49 @@ and viewer-specific brief text.
      --brief /tmp/bench-brief.md
    ```
 
-4. If `harness.selection_required` is true, ask once with a numbered list:
+4. Inspect `harnesses` in the resolver output. It is ordered by first-class UI
+   tab role: optional Plan first, then Work.
+5. If the Plan harness exists and `selection_required` is true, ask once with a
+   numbered list:
    1. Claude, plan mode.
    2. Pi, plan before edits.
 
-   Then rerun the resolver with `--harness-tool claude` or
-   `--harness-tool pi`.
-5. If `diff.selection_required` is true, ask once with a numbered list:
+   Then rerun the resolver with `--plan-harness-tool claude` or
+   `--plan-harness-tool pi`.
+
+6. If the Work harness has `selection_required` true, ask once with a numbered
+   list:
+   1. Claude, plan mode.
+   2. Pi, plan before edits.
+
+   Then rerun the resolver with `--harness-tool claude` or `--harness-tool pi`.
+
+7. If `diff.selection_required` is true, ask once with a numbered list:
    1. Comview.
    2. Hunk.
    3. None.
 
    Then rerun the resolver with `--diff-tool comview`, `--diff-tool hunk`, or
    `--diff-tool none`.
-6. Stop on resolver errors. Do not guess when configuration is malformed, an
+
+8. Stop on resolver errors. Do not guess when configuration is malformed, an
    executable is missing, or a required choice is unresolved.
 
-Pass the returned `harness.argv` to the UI adapter unchanged. It is an argv list,
-not a shell command string.
+Pass each returned harness tab's `argv` to the UI adapter unchanged. Each value
+is an argv list, not a shell command string. Keep the legacy `harness` object as
+the resolved Work harness for callers that have not moved to `harnesses`.
+
+## Split-harness handoff
+
+When the resolver returns both Plan and Work harnesses, the bench uses a
+human-mediated handoff in version 1:
+
+1. Start Plan with its configured prompt.
+2. Start Work with its resolved argv. Work may have no prompt and can start as
+   an empty interactive agent.
+3. The Plan prompt should tell the Plan agent to write the plan, stop for
+   approval, and produce the exact prompt the human should paste into Work.
+4. Do not make bench or the UI adapter signal Work directly.
 
 ## Create the native workspace
 
@@ -131,9 +156,10 @@ request, tracker, PR metadata, resolver output, and selected diff integration:
 - acceptance criteria or review scope;
 - links and IDs;
 - resolved base revision;
-- selected harness argv in readable form;
+- selected harness tabs, roles, titles, and argv values in readable form;
 - selected diff tool, or that no companion was requested;
 - companion command and viewer-specific instructions, if a companion exists;
+- for split harnesses, the Plan-to-Work paste handoff instruction; and
 - known constraints and open questions.
 
 A thin brief is correct when the ticket is thin. Put uncertainty in open
@@ -152,21 +178,21 @@ command -v supacode >/dev/null && echo supacode || echo no-supacode
 - Else if `supacode` exists, use `bench-supacode` for Supacode mechanics.
 - Else use native terminals when available.
 
-Every UI path receives the same inputs: bench path, short title, harness argv,
-and an optional companion title plus command. UI skills must not detect viewers,
-construct viewer commands, or add review semantics.
+Every UI path receives the same inputs: bench path, short title, ordered harness
+tab specs, and an optional companion title plus command. UI skills must not
+detect viewers, construct viewer commands, or add review semantics.
 
 ## Native terminal fallback
 
 When no UI skill is available, keep the same separation of concerns:
 
-1. Start the harness in a work terminal rooted at the bench.
+1. Start each harness tab in order, rooted at the bench.
 2. If a companion exists, start it in a separate terminal rooted at the bench.
-3. Return focus to the work terminal when possible.
+3. Return focus to the Work terminal when possible.
 4. Verify the shell cwd for each terminal before reporting success.
 
-If you cannot verify cwd or keep Work separate from the companion, report that
-setup is incomplete.
+If you cannot verify cwd or keep Work separate from Plan and the companion,
+report that setup is incomplete.
 
 ## Final verification
 
@@ -175,7 +201,7 @@ Before reporting success, confirm:
 - the workspace root and VCS metadata are correct;
 - the environment setup completed;
 - the handoff brief exists outside the workspace;
-- the harness process started from the bench root;
+- each harness process started from the bench root;
 - any companion process started from the bench root;
 - the selected diff integration's verification passed;
 - the UI is focused back on Work when a UI is available; and
