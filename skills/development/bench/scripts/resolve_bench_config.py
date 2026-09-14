@@ -18,6 +18,8 @@ CLAUDE_PERMISSION_MODES = frozenset(
     {"acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"}
 )
 HARNESS_TOOLS = frozenset({"ask", "claude", "pi"})
+HARNESS_ROLES = frozenset({"plan", "work"})
+ROLE_ORDER = ("plan", "work")
 DIFF_TOOLS = frozenset({"auto", "comview", "hunk", "none"})
 HARNESS_KEYS = frozenset({"tool", "permission_mode", "prompt", "command"})
 DIFF_KEYS = frozenset({"tool"})
@@ -34,6 +36,8 @@ class HarnessConfig:
     permission_mode: str | None = None
     prompt: str | None = None
     command: tuple[str, ...] | None = None
+    title: str | None = None
+    use_default_prompt: bool = True
 
 
 @dataclasses.dataclass
@@ -194,8 +198,17 @@ def require_executable(name: str, which: Callable[[str], str | None]) -> None:
         raise ConfigError(f"Executable not found: {name}")
 
 
+def with_role(result: dict[str, Any], *, role: str, title: str) -> dict[str, Any]:
+    return {"role": role, "title": title, **result}
+
+
 def resolve_harness(
-    config: HarnessConfig, *, brief: pathlib.Path, which: Callable[[str], str | None]
+    config: HarnessConfig,
+    *,
+    brief: pathlib.Path,
+    which: Callable[[str], str | None],
+    role: str,
+    title: str,
 ) -> dict[str, Any]:
     prompt = render_template(config.prompt or DEFAULT_PROMPT, brief=brief)
     available = available_tools(["claude", "pi"], which)
@@ -206,46 +219,62 @@ def resolve_harness(
         argv = [render_template(arg, brief=brief) for arg in config.command]
         require_executable(argv[0], which)
         argv.append(prompt)
-        return {
-            "tool": "custom",
-            "argv": argv,
-            "available": available,
-            "selection_required": False,
-        }
+        return with_role(
+            {
+                "tool": "custom",
+                "argv": argv,
+                "available": available,
+                "selection_required": False,
+            },
+            role=role,
+            title=title,
+        )
 
     tool = config.tool or "ask"
     if tool == "ask":
         if config.permission_mode is not None:
             raise ConfigError("harness.permission_mode cannot be used when harness.tool is ask")
-        return {
-            "tool": None,
-            "argv": [],
-            "available": available,
-            "selection_required": True,
-        }
+        return with_role(
+            {
+                "tool": None,
+                "argv": [],
+                "available": available,
+                "selection_required": True,
+            },
+            role=role,
+            title=title,
+        )
 
     if tool == "claude":
         permission_mode = config.permission_mode or "plan"
         if permission_mode not in CLAUDE_PERMISSION_MODES:
             raise ConfigError(f"Unsupported Claude permission_mode: {permission_mode}")
         require_executable("claude", which)
-        return {
-            "tool": "claude",
-            "argv": ["claude", "--permission-mode", permission_mode, prompt],
-            "available": available,
-            "selection_required": False,
-        }
+        return with_role(
+            {
+                "tool": "claude",
+                "argv": ["claude", "--permission-mode", permission_mode, prompt],
+                "available": available,
+                "selection_required": False,
+            },
+            role=role,
+            title=title,
+        )
 
     if tool == "pi":
         if config.permission_mode is not None:
             raise ConfigError("harness.permission_mode is not supported for pi")
         require_executable("pi", which)
-        return {
-            "tool": "pi",
-            "argv": ["pi", f"@{brief}", prompt],
-            "available": available,
-            "selection_required": False,
-        }
+        return with_role(
+            {
+                "tool": "pi",
+                "argv": ["pi", f"@{brief}", prompt],
+                "available": available,
+                "selection_required": False,
+            },
+            role=role,
+            title=title,
+        )
 
     raise ConfigError(f"Unsupported harness.tool: {tool}")
 
@@ -307,8 +336,16 @@ def resolve_config(
             raise ConfigError(f"Unsupported --diff-tool: {diff_tool}")
         config.diff.tool = diff_tool
 
+    work = resolve_harness(
+        config.harness,
+        brief=brief,
+        which=which,
+        role="work",
+        title=config.harness.title or "Work",
+    )
     return {
-        "harness": resolve_harness(config.harness, brief=brief, which=which),
+        "harness": work,
+        "harnesses": [work],
         "diff": resolve_diff(config.diff, which=which),
     }
 

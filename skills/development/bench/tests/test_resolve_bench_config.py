@@ -82,11 +82,23 @@ class ResolveBenchConfigTests(unittest.TestCase):
             result,
             {
                 "harness": {
+                    "role": "work",
+                    "title": "Work",
                     "tool": None,
                     "argv": [],
                     "available": [],
                     "selection_required": True,
                 },
+                "harnesses": [
+                    {
+                        "role": "work",
+                        "title": "Work",
+                        "tool": None,
+                        "argv": [],
+                        "available": [],
+                        "selection_required": True,
+                    }
+                ],
                 "diff": {
                     "tool": "none",
                     "available": [],
@@ -117,6 +129,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
 
         self.assertEqual(result["harness"]["tool"], "claude")
         self.assertEqual(result["harness"]["argv"], ["claude", "--permission-mode", "plan", f"XDG {self.brief}"])
+        self.assertEqual(result["harnesses"], [{**result["harness"], "role": "work", "title": "Work"}])
 
     def test_falls_back_to_home_config_when_xdg_is_unset(self) -> None:
         self.executables.add("pi")
