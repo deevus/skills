@@ -20,10 +20,12 @@ CLAUDE_PERMISSION_MODES = frozenset(
 HARNESS_TOOLS = frozenset({"ask", "claude", "pi"})
 HARNESS_ROLES = frozenset({"plan", "work"})
 ROLE_ORDER = ("plan", "work")
+ROLE_TITLES = {"plan": "Plan", "work": "Work"}
 DIFF_TOOLS = frozenset({"auto", "comview", "hunk", "none"})
 HARNESS_KEYS = frozenset({"tool", "permission_mode", "prompt", "command"})
+ROLE_HARNESS_KEYS = HARNESS_KEYS | frozenset({"role", "title", "enabled"})
 DIFF_KEYS = frozenset({"tool"})
-TOP_LEVEL_KEYS = frozenset({"harness", "diff"})
+TOP_LEVEL_KEYS = frozenset({"harness", "harnesses", "diff"})
 
 
 class ConfigError(ValueError):
@@ -47,7 +49,8 @@ class DiffConfig:
 
 @dataclasses.dataclass
 class BenchConfig:
-    harness: HarnessConfig = dataclasses.field(default_factory=HarnessConfig)
+    harnesses: dict[str, HarnessConfig] = dataclasses.field(default_factory=dict)
+    disabled_roles: set[str] = dataclasses.field(default_factory=set)
     diff: DiffConfig = dataclasses.field(default_factory=DiffConfig)
 
 
@@ -92,16 +95,92 @@ def merge_layer(config: BenchConfig, data: dict[str, Any], *, source: str) -> No
         )
 
     harness = data.get("harness")
+    if harness is not None and not isinstance(harness, dict):
+        raise ConfigError(f"[harness] in {source} must be a table")
+
+    harness_entries = parse_role_harness_entries(data.get("harnesses"), source=source)
+    if harness is not None and any(role == "work" for role, _entry in harness_entries):
+        raise ConfigError(
+            f"{source} cannot both define [harness] and [[harnesses]] role = \"work\""
+        )
+
     if harness is not None:
-        if not isinstance(harness, dict):
-            raise ConfigError(f"[harness] in {source} must be a table")
-        merge_harness_layer(config.harness, harness, source=source)
+        merge_legacy_work_harness(config, harness, source=source)
+
+    for role, entry in harness_entries:
+        merge_role_harness(config, role, entry, source=source)
 
     diff = data.get("diff")
     if diff is not None:
         if not isinstance(diff, dict):
             raise ConfigError(f"[diff] in {source} must be a table")
         merge_diff_layer(config.diff, diff, source=source)
+
+
+def parse_role_harness_entries(
+    value: Any, *, source: str
+) -> list[tuple[str, dict[str, Any]]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ConfigError(f"[[harnesses]] in {source} must be an array of tables")
+
+    entries: list[tuple[str, dict[str, Any]]] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(value):
+        if not isinstance(entry, dict):
+            raise ConfigError(f"[[harnesses]] entry {index} in {source} must be a table")
+        unknown_keys = set(entry) - ROLE_HARNESS_KEYS
+        if unknown_keys:
+            raise ConfigError(
+                f"Unknown key in [[harnesses]] in {source}: {format_key_list(unknown_keys)}"
+            )
+        role = require_non_empty_string(entry.get("role"), "harnesses.role", source)
+        if role not in HARNESS_ROLES:
+            raise ConfigError(f"Unsupported harness role in {source}: {role}")
+        if role in seen:
+            raise ConfigError(f"Duplicate harness role in {source}: {role}")
+        seen.add(role)
+        entries.append((role, entry))
+    return entries
+
+
+def merge_legacy_work_harness(
+    config: BenchConfig, data: dict[str, Any], *, source: str
+) -> None:
+    work = config.harnesses.setdefault("work", HarnessConfig())
+    work.use_default_prompt = True
+    config.disabled_roles.discard("work")
+    merge_harness_layer(work, data, source=source)
+
+
+def merge_role_harness(
+    config: BenchConfig, role: str, data: dict[str, Any], *, source: str
+) -> None:
+    if "enabled" in data:
+        enabled = data["enabled"]
+        if not isinstance(enabled, bool):
+            raise ConfigError(f"harnesses.enabled in {source} must be a boolean")
+        if enabled is False:
+            extra_keys = set(data) - {"role", "enabled"}
+            if extra_keys:
+                raise ConfigError(
+                    "enabled = false cannot be combined with other harness fields"
+                )
+            config.harnesses.pop(role, None)
+            config.disabled_roles.add(role)
+            return
+
+    harness = config.harnesses.setdefault(role, HarnessConfig(use_default_prompt=False))
+    harness.use_default_prompt = False
+    harness.prompt = None
+    config.disabled_roles.discard(role)
+
+    if "title" in data:
+        harness.title = require_non_empty_string(data["title"], "harnesses.title", source)
+
+    harness_data = {key: value for key, value in data.items() if key in HARNESS_KEYS}
+    merge_harness_layer(harness, harness_data, source=source)
 
 
 def merge_harness_layer(
@@ -198,6 +277,14 @@ def require_executable(name: str, which: Callable[[str], str | None]) -> None:
         raise ConfigError(f"Executable not found: {name}")
 
 
+def render_prompt(config: HarnessConfig, *, brief: pathlib.Path) -> str | None:
+    if config.prompt is not None:
+        return render_template(config.prompt, brief=brief)
+    if config.use_default_prompt:
+        return render_template(DEFAULT_PROMPT, brief=brief)
+    return None
+
+
 def with_role(result: dict[str, Any], *, role: str, title: str) -> dict[str, Any]:
     return {"role": role, "title": title, **result}
 
@@ -210,7 +297,7 @@ def resolve_harness(
     role: str,
     title: str,
 ) -> dict[str, Any]:
-    prompt = render_template(config.prompt or DEFAULT_PROMPT, brief=brief)
+    prompt = render_prompt(config, brief=brief)
     available = available_tools(["claude", "pi"], which)
 
     if config.command is not None:
@@ -218,7 +305,8 @@ def resolve_harness(
             raise ConfigError("harness.permission_mode cannot be used with harness.command")
         argv = [render_template(arg, brief=brief) for arg in config.command]
         require_executable(argv[0], which)
-        argv.append(prompt)
+        if prompt is not None:
+            argv.append(prompt)
         return with_role(
             {
                 "tool": "custom",
@@ -250,10 +338,13 @@ def resolve_harness(
         if permission_mode not in CLAUDE_PERMISSION_MODES:
             raise ConfigError(f"Unsupported Claude permission_mode: {permission_mode}")
         require_executable("claude", which)
+        argv = ["claude", "--permission-mode", permission_mode]
+        if prompt is not None:
+            argv.append(prompt)
         return with_role(
             {
                 "tool": "claude",
-                "argv": ["claude", "--permission-mode", permission_mode, prompt],
+                "argv": argv,
                 "available": available,
                 "selection_required": False,
             },
@@ -265,10 +356,13 @@ def resolve_harness(
         if config.permission_mode is not None:
             raise ConfigError("harness.permission_mode is not supported for pi")
         require_executable("pi", which)
+        argv = ["pi"]
+        if prompt is not None:
+            argv.extend([f"@{brief}", prompt])
         return with_role(
             {
                 "tool": "pi",
-                "argv": ["pi", f"@{brief}", prompt],
+                "argv": argv,
                 "available": available,
                 "selection_required": False,
             },
@@ -311,6 +405,40 @@ def resolve_diff(
     raise ConfigError(f"Unsupported diff.tool: {tool}")
 
 
+def apply_harness_tool_override(
+    config: BenchConfig, *, role: str, tool: str, source: str
+) -> None:
+    if tool not in HARNESS_TOOLS:
+        raise ConfigError(f"Unsupported {source}: {tool}")
+    if role in config.disabled_roles or role not in config.harnesses:
+        config.harnesses[role] = HarnessConfig(use_default_prompt=True)
+    harness = config.harnesses[role]
+    harness.tool = tool
+    harness.command = None
+    harness.permission_mode = None
+    config.disabled_roles.discard(role)
+
+
+def resolved_harnesses(
+    config: BenchConfig, *, brief: pathlib.Path, which: Callable[[str], str | None]
+) -> list[dict[str, Any]]:
+    resolved: list[dict[str, Any]] = []
+    for role in ROLE_ORDER:
+        harness = config.harnesses.get(role)
+        if harness is None:
+            continue
+        resolved.append(
+            resolve_harness(
+                harness,
+                brief=brief,
+                which=which,
+                role=role,
+                title=harness.title or ROLE_TITLES[role],
+            )
+        )
+    return resolved
+
+
 def resolve_config(
     *,
     repo_root: pathlib.Path,
@@ -325,28 +453,31 @@ def resolve_config(
     for path in config_paths(repo_root):
         merge_config_file(config, path)
 
+    if plan_harness_tool is not None:
+        apply_harness_tool_override(
+            config, role="plan", tool=plan_harness_tool, source="--plan-harness-tool"
+        )
+
     if harness_tool is not None:
-        if harness_tool not in HARNESS_TOOLS:
-            raise ConfigError(f"Unsupported --harness-tool: {harness_tool}")
-        config.harness.tool = harness_tool
-        config.harness.command = None
-        config.harness.permission_mode = None
+        apply_harness_tool_override(
+            config, role="work", tool=harness_tool, source="--harness-tool"
+        )
+
+    if "work" in config.disabled_roles and "work" not in config.harnesses:
+        raise ConfigError("work harness is disabled and no explicit Work override was provided")
+    if "work" not in config.harnesses:
+        config.harnesses["work"] = HarnessConfig(use_default_prompt=True)
 
     if diff_tool is not None:
         if diff_tool not in DIFF_TOOLS:
             raise ConfigError(f"Unsupported --diff-tool: {diff_tool}")
         config.diff.tool = diff_tool
 
-    work = resolve_harness(
-        config.harness,
-        brief=brief,
-        which=which,
-        role="work",
-        title=config.harness.title or "Work",
-    )
+    harnesses = resolved_harnesses(config, brief=brief, which=which)
+    work = next(item for item in harnesses if item["role"] == "work")
     return {
         "harness": work,
-        "harnesses": [work],
+        "harnesses": harnesses,
         "diff": resolve_diff(config.diff, which=which),
     }
 
@@ -364,7 +495,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--harness-tool",
         choices=sorted(HARNESS_TOOLS),
-        help="explicit harness selection for this request",
+        help="explicit Work harness selection for this request",
+    )
+    parser.add_argument(
+        "--plan-harness-tool",
+        choices=sorted(HARNESS_TOOLS),
+        help="explicit Plan harness selection for this request",
     )
     parser.add_argument(
         "--diff-tool",
@@ -380,6 +516,7 @@ def execute(argv: Sequence[str]) -> str:
         repo_root=pathlib.Path(args.repo_root),
         brief=pathlib.Path(args.brief),
         harness_tool=args.harness_tool,
+        plan_harness_tool=args.plan_harness_tool,
         diff_tool=args.diff_tool,
     )
     return json.dumps(resolved, indent=2, sort_keys=True) + "\n"
