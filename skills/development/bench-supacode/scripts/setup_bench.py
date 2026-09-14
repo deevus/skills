@@ -205,6 +205,7 @@ def wait_for_worktree(
 def validate_harness_tabs(harness_tabs: Sequence[HarnessTab]) -> tuple[HarnessTab, ...]:
     if not harness_tabs:
         raise SetupError("At least one harness tab is required")
+    plan_count = 0
     work_count = 0
     validated: list[HarnessTab] = []
     for tab in harness_tabs:
@@ -214,9 +215,15 @@ def validate_harness_tabs(harness_tabs: Sequence[HarnessTab]) -> tuple[HarnessTa
             raise SetupError(f"Harness tab title is required for role {tab.role}")
         if not tab.argv:
             raise SetupError(f"Harness command is required for role {tab.role}")
+        if tab.role == "plan":
+            plan_count += 1
+
         if tab.role == "work":
             work_count += 1
         validated.append(tab)
+    if plan_count > 1:
+        raise SetupError(f"Expected at most one plan harness tab; found {plan_count}")
+
     if work_count != 1:
         raise SetupError(f"Expected exactly one work harness tab; found {work_count}")
     return tuple(validated)

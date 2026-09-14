@@ -521,6 +521,20 @@ class SetupBenchTests(unittest.TestCase):
             ("supacode", "tab", "focus", "-w", WORKTREE, "-t", WORK_TAB),
         )
 
+    def test_rejects_duplicate_plan_harness_tabs_before_opening_repo(self) -> None:
+        runner = FakeRunner()
+        harness_tabs = (
+            harness_tab("plan", "Plan", PLAN_HARNESS),
+            harness_tab("plan", "Plan again", PLAN_HARNESS),
+            harness_tab("work", "Work", WORK_HARNESS),
+        )
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "at most one plan"):
+            SETUP_BENCH.setup_bench(request(harness_tabs=harness_tabs), run=runner)
+
+        self.assertEqual(runner.commands, [])
+
+
     def test_rejects_an_invalid_companion_final_tab_layout(self) -> None:
         runner = happy_runner(
             companion_title=COMPANION_TITLE,
@@ -643,6 +657,28 @@ class SetupBenchTests(unittest.TestCase):
                 harness_tab("work", "Work", WORK_HARNESS),
             ),
         )
+
+    def test_cli_rejects_harness_tabs_json_with_duplicate_plan_roles(self) -> None:
+        with self.assertRaises(SystemExit):
+            SETUP_BENCH.parse_args(
+                [
+                    "--path",
+                    BENCH_PATH,
+                    "--title",
+                    "Example task",
+                    "--color",
+                    "blue",
+                    "--harness-tabs-json",
+                    json.dumps(
+                        [
+                            {"role": "plan", "title": "Plan", "argv": list(PLAN_HARNESS)},
+                            {"role": "plan", "title": "Plan again", "argv": list(PLAN_HARNESS)},
+                            {"role": "work", "title": "Work", "argv": list(WORK_HARNESS)},
+                        ]
+                    ),
+                ]
+            )
+
 
     def test_cli_rejects_harness_tabs_json_without_work_role(self) -> None:
         with self.assertRaises(SystemExit):
