@@ -19,8 +19,8 @@ python3 <bench-skill-dir>/scripts/resolve_bench_config.py \
 
 After a user choice, run the same command again with `--harness-tool`,
 `--plan-harness-tool`, and/or `--diff-tool`. Include all earlier explicit
-selections on every rerun, so a later Plan, Work, or Diff choice does not drop an
-earlier choice.
+selections on every rerun, so a later Plan, Work, or Diff choice does not drop
+an earlier choice.
 
 ## Precedence
 
@@ -34,13 +34,18 @@ Configuration is read from lowest to highest precedence:
 Missing files are ignored. Repository values override user values, and explicit
 flags override both.
 
+## Onboarding
+
+For first-run Global/Local setup and starter Claude/Codex/Pi configs, read
+[Bench onboarding](onboarding.md).
+
 ## Schema
 
 The legacy `[harness]` table remains valid. It means the Work harness.
 
 ```toml
 [harness]
-tool = "claude" # ask | claude | pi
+tool = "claude" # ask | claude | codex | pi
 permission_mode = "plan"
 prompt = "Read {brief}, then plan before edits."
 # command = ["custom-agent", "--instructions", "{brief}"]
@@ -49,7 +54,10 @@ prompt = "Read {brief}, then plan before edits."
 tool = "auto" # auto | comview | hunk | none
 ```
 
-Use `[[harnesses]]` when a bench needs first-class harness tabs by role.
+Use `[[harnesses]]` only for advanced benches that need first-class harness tabs
+by role.
+
+### Advanced: split Plan and Work
 
 ```toml
 [[harnesses]]
@@ -72,7 +80,8 @@ tool = "comview"
 Defaults:
 
 - Missing `[harness]` and missing `[[harnesses]] role = "work"` behaves as Work
-  `tool = "ask"`.
+  `tool = "ask"`: auto-select the sole installed preset, ask when multiple
+  supported presets are installed, and remain unresolved when none is installed.
 - Missing legacy `harness.prompt` behaves as
   `"Read {brief}, then plan before edits."`.
 - Missing `prompt` in a `[[harnesses]]` entry means no initial prompt for that
@@ -122,13 +131,14 @@ current run.
 - Only `{brief}` may be interpolated, and only in command arguments and prompt.
 - Claude supports `acceptEdits`, `auto`, `bypassPermissions`, `manual`,
   `dontAsk`, and `plan`; omission defaults to `plan`.
-- Pi rejects `permission_mode`; use `command` for custom Pi flags.
+- Codex and Pi reject `permission_mode`; use `command` for custom flags.
 - Configured preset and custom harness executables must exist on `PATH`.
 
 Rendered presets with a prompt:
 
 ```text
 claude --permission-mode <mode> <prompt>
+codex <prompt>
 pi @<brief> <prompt>
 ```
 
@@ -136,6 +146,7 @@ Rendered presets without a prompt:
 
 ```text
 claude --permission-mode <mode>
+codex
 pi
 ```
 
@@ -144,8 +155,9 @@ rendered prompt as the final argv item only when that harness role has a prompt.
 
 ## Request flags
 
-- `--harness-tool claude|pi|ask` selects or overrides Work for this request.
-- `--plan-harness-tool claude|pi|ask` selects or overrides Plan for this
+- `--harness-tool claude|codex|pi|ask` selects or overrides Work for this
+  request.
+- `--plan-harness-tool claude|codex|pi|ask` selects or overrides Plan for this
   request.
 - `--diff-tool auto|comview|hunk|none` selects or overrides the diff viewer for
   this request.
@@ -178,7 +190,7 @@ It also returns `harnesses`, the ordered list of first-class harness tabs.
     "title": "Work",
     "tool": "pi",
     "argv": ["pi", "@/tmp/bench-brief.md", "Read ..."],
-    "available": ["claude", "pi"],
+    "available": ["claude", "codex", "pi"],
     "selection_required": false
   },
   "harnesses": [
@@ -187,7 +199,7 @@ It also returns `harnesses`, the ordered list of first-class harness tabs.
       "title": "Plan",
       "tool": "claude",
       "argv": ["claude", "--permission-mode", "plan", "Read ..."],
-      "available": ["claude", "pi"],
+      "available": ["claude", "codex", "pi"],
       "selection_required": false
     },
     {
@@ -195,7 +207,7 @@ It also returns `harnesses`, the ordered list of first-class harness tabs.
       "title": "Work",
       "tool": "custom",
       "argv": ["pi", "--model", "openai-codex/gpt-5.6-astra"],
-      "available": ["claude", "pi"],
+      "available": ["claude", "codex", "pi"],
       "selection_required": false
     }
   ],
@@ -207,11 +219,13 @@ It also returns `harnesses`, the ordered list of first-class harness tabs.
 }
 ```
 
-For `tool = "ask"`, `tool` is `null`, `argv` is empty, and `selection_required`
-is `true`. For `command`, `tool` is `"custom"` and `argv` contains the rendered
-command plus a prompt only when one is configured.
+For unresolved `tool = "ask"`, `tool` is `null`, `argv` is empty, and
+`selection_required` is `true`. If exactly one supported preset is installed,
+`tool = "ask"` resolves to that preset with `selection_required = false`. For
+`command`, `tool` is `"custom"` and `argv` contains the rendered command plus a
+prompt only when one is configured.
 
-## Split-harness handoff
+## Advanced split-harness handoff
 
 The first split-harness workflow is human-mediated. Plan starts with its
 configured prompt. Work can start with no prompt as an empty interactive agent.
@@ -240,6 +254,6 @@ conflicting, including:
 - Work disabled without an explicit Work override;
 - unsupported tools or Claude permission modes;
 - `tool` combined with `command` in one harness table;
-- `permission_mode` with Pi, Ask, or a custom command;
+- `permission_mode` with Codex, Pi, Ask, or a custom command;
 - unsupported placeholders such as `{ticket}`;
 - missing executables for configured harnesses or explicit diff viewers.

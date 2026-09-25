@@ -37,7 +37,11 @@ and viewer-specific brief text.
 1. Pick a stable handoff brief path outside the workspace.
 2. Write an initial brief from the request, ticket, or PR metadata only. Do not
    scout the codebase for the harness.
-3. Resolve `scripts/resolve_bench_config.py` relative to the loaded `bench`
+3. Before the first resolver run, check whether the user config and repository
+   config already exist. User config is `$XDG_CONFIG_HOME/bench/config.toml`, or
+   `~/.config/bench/config.toml` when `XDG_CONFIG_HOME` is unset. Repository
+   config is `<source-repo>/.bench/config.toml`.
+4. Resolve `scripts/resolve_bench_config.py` relative to the loaded `bench`
    skill directory. Run that installed resolver while passing the source
    repository with `--repo-root`:
 
@@ -47,37 +51,76 @@ and viewer-specific brief text.
      --brief /tmp/bench-brief.md
    ```
 
-4. Inspect `harnesses` in the resolver output. It is ordered by first-class UI
+5. Inspect `harnesses` in the resolver output. It is ordered by first-class UI
    tab role: optional Plan first, then Work.
-5. If the Plan harness exists and `selection_required` is true, ask once with a
-   numbered list:
-   1. Claude, plan mode.
-   2. Pi, plan before edits.
+6. If any Plan or Work harness has `selection_required` true, use its
+   `available` list as the only supported choices:
+   - If `available` is empty, stop. Report that no supported harness executable
+     was found and tell the user to install Claude, Codex, or Pi, or configure a
+     custom argv command with [configuration](references/configuration.md).
+   - If `available` has one item, stop and report an internal resolver error;
+     the resolver should have selected the only installed preset.
+   - If `available` has multiple items, ask once with a numbered list generated
+     in `available` order. For the no-config first-run branch, label them as
+     starter presets: `Claude starter — one Work tab in plan mode`,
+     `Codex starter — one Work tab prompted to plan before edits`, and
+     `Pi starter — one Work tab prompted to plan before edits`. Starter presets
+     use one Work tab for planning and implementation; do not suggest a separate
+     Plan role during onboarding.
 
-   Then rerun the resolver with `--plan-harness-tool claude` or
-   `--plan-harness-tool pi`. Include any earlier explicit selections on every
-   rerun, so later Work or Diff choices do not drop the Plan choice.
+   Rerun with `--plan-harness-tool <tool>` for Plan or `--harness-tool <tool>`
+   for Work. Include any earlier explicit selections on every rerun, so later
+   Work or Diff choices do not drop Plan or Work choices.
 
-6. If the Work harness has `selection_required` true, ask once with a numbered
-   list:
-   1. Claude, plan mode.
-   2. Pi, plan before edits.
-
-   Then rerun the resolver with `--harness-tool claude` or `--harness-tool pi`.
-   Include any earlier explicit selections on every rerun, so later Diff choices
-   do not drop Plan or Work choices.
-
-7. If `diff.selection_required` is true, ask once with a numbered list:
-   1. Comview.
-   2. Hunk.
-   3. None.
-
-   Then rerun the resolver with `--diff-tool comview`, `--diff-tool hunk`, or
-   `--diff-tool none`. Include all earlier explicit Plan and Work selections on
-   this rerun.
-
+7. If `diff.selection_required` is true, ask once with a numbered list generated
+   from `diff.available`, followed by `None`. Then rerun the resolver with
+   `--diff-tool comview`, `--diff-tool hunk`, or `--diff-tool none`. Include all
+   earlier explicit Plan and Work selections on this rerun.
 8. Stop on resolver errors. Do not guess when configuration is malformed, an
    executable is missing, or a required choice is unresolved.
+9. If neither config file existed before the first resolver run and the final
+   resolver output has no `selection_required: true` value, read
+   [Bench onboarding](references/onboarding.md), then initialize configuration
+   before workspace creation. Say: "You need to set up a bench configuration.
+   Would you like it to be global or local?"
+
+   1. Global — create `$XDG_CONFIG_HOME/bench/config.toml`, falling back to
+      `~/.config/bench/config.toml`, for future repositories.
+   2. Local — create `<source-repo>/.bench/config.toml` for this repository
+      only.
+
+   The selected scope is consent to create that file; do not ask a separate
+   Save-versus-Use-once question. Recheck the selected path immediately before
+   writing. If it now exists, stop and ask the user to reconcile it rather than
+   overwriting it.
+
+10. If the resolver already returned a Plan harness, or the resolved Work
+    harness has `tool: custom`, report the resolved configuration and continue
+    without writing a starter config.
+11. Ask which workflow shape to initialize:
+
+    1. Simple starter — one Work tab. Recommended.
+    2. Advanced split — Plan tab plus Work tab.
+
+    Explain that the advanced split is for users who want to try a separate
+    planning harness and implementation harness.
+
+12. For the simple starter, write the starter config from
+    [Bench onboarding](references/onboarding.md) for the resolved Work harness
+    and final Diff tool.
+13. For the advanced split, still offer split tabs when only one preset is
+    installed. If the resolved Work harness has an `available` list with
+    multiple presets, ask for Plan and Work harnesses from that list. If the
+    resolver selected the sole installed preset and no choice list remains, say
+    only one preset is installed and use that preset for both Plan and Work
+    unless the user cancels. Write the split starter config from
+    [Bench onboarding](references/onboarding.md). The Plan prompt must tell the
+    Plan agent to write the approved Work prompt to a file that the human can
+    provide to the Work tab.
+14. After writing the starter config, rerun the resolver with the same
+    `--repo-root` and `--brief`, but omit the temporary explicit Plan, Work, and
+    Diff selections used for first-run choices. Use the refreshed `harnesses`,
+    legacy `harness`, and `diff` output for the brief and UI launch.
 
 Pass each returned harness tab's `argv` to the UI adapter unchanged. Each value
 is an argv list, not a shell command string. Keep the legacy `harness` object as
@@ -145,7 +188,8 @@ Use the resolver's final `diff.tool` value:
   the companion title, companion command, and brief additions.
 - `hunk`: read [Bench Diff Hunk](references/diff-hunk.md) to produce the
   companion title, companion command, session verification, and brief additions.
-- `none`: do not create a companion and do not read a diff integration reference.
+- `none`: do not create a companion and do not read a diff integration
+  reference.
 
 Pass the bench type and VCS facts to the diff reference: task, review, or stack;
 Git or Jujutsu; base branch or revset; review head; and any path scope. Do not
@@ -192,13 +236,39 @@ detect viewers, construct viewer commands, or add review semantics.
 
 When no UI skill is available, keep the same separation of concerns:
 
-1. Start each harness tab in order, rooted at the bench.
-2. If a companion exists, start it in a separate terminal rooted at the bench.
-3. Return focus to the Work terminal when possible.
-4. Verify the shell cwd for each terminal before reporting success.
+1. If your host can open native terminal tabs, start each harness tab in order,
+   rooted at the bench. If a companion exists, start it in a separate terminal
+   rooted at the bench. Return focus to Work when possible. Before reporting
+   success, verify each shell cwd and verify a running harness process or
+   session. If the host cannot verify process or session state, use the manual
+   confirmation path instead.
+2. If your host cannot open native terminal tabs, print paste-ready commands for
+   the human. Print one command per ordered tab:
 
-If you cannot verify cwd or keep Work separate from Plan and the companion,
-report that setup is incomplete.
+   ```text
+   <Title>: cd <shell-quoted-bench-path> && <shell-quoted argv or companion command>
+   ```
+
+   Shell-quote the bench path and every harness argv element. Keep argv arrays
+   unchanged until this display boundary. For a companion, append the companion
+   command after `&&` exactly as produced by the selected diff reference.
+
+   Example:
+
+   ```text
+   Work: cd '/path/to/bench' && claude --permission-mode plan 'Read /tmp/brief.md, then plan before edits.'
+   ```
+
+3. After printing commands, ask with a numbered list:
+   1. I started the commands in separate terminals.
+   2. I need help starting them.
+
+   On option 1, accept the human confirmation as native launch verification and
+   complete the bench. On option 2, keep the workspace and brief, report that
+   setup is awaiting terminal launch, and repeat the commands.
+
+If native terminal state cannot be machine-verified, do not claim it was
+machine-verified; say that launch was confirmed by the human.
 
 ## Final verification
 
@@ -207,11 +277,27 @@ Before reporting success, confirm:
 - the workspace root and VCS metadata are correct;
 - the environment setup completed;
 - the handoff brief exists outside the workspace;
-- each harness process started from the bench root;
-- any companion process started from the bench root;
-- the selected diff integration's verification passed;
+- for Herdr, Supacode, and auto-opened native tabs, each harness process or
+  session is running from the bench root;
+- for manual native launch, the human confirmed starting each printed command,
+  and every printed command began with `cd <bench>`;
+- for Herdr, Supacode, and auto-opened native tabs, any companion process or
+  session is running from the bench root;
+- for manual native launch with a companion, the human confirmed starting the
+  printed companion command;
+- the selected diff integration's verification passed when a companion exists;
 - the UI is focused back on Work when a UI is available; and
 - review benches have not pushed or mutated someone else's branch.
+
+In the final report, distinguish diff states:
+
+- If `diff.tool == "none"` and `diff.available == []`, say: "No diff viewer is
+  installed; Hunk is recommended. Install it from <https://www.hunk.dev/>.
+  Comview is an available alternative at
+  <https://github.com/rockorager/comview>."
+- If `diff.tool == "none"` and `diff.available` is not empty, say that no
+  companion was requested.
+- If a viewer is selected, report its name and companion command.
 
 Fail closed on missing sessions, unexpected tabs, ambiguous cwd, unresolved
 configuration, or unavailable executables.
