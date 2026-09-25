@@ -108,12 +108,15 @@ and viewer-specific brief text.
 12. For the simple starter, write the starter config from
     [Bench onboarding](references/onboarding.md) for the resolved Work harness
     and final Diff tool.
-13. For the advanced split, ask for Plan and Work harnesses from the resolved
-    Work harness's `available` list. If only one harness is available, say so
-    and use it for both tabs unless the user cancels. Write the split starter
-    config from [Bench onboarding](references/onboarding.md). The Plan prompt
-    must tell the Plan agent to write the approved Work prompt to a file that
-    the human can provide to the Work tab.
+13. For the advanced split, still offer split tabs when only one preset is
+    installed. If the resolved Work harness has an `available` list with
+    multiple presets, ask for Plan and Work harnesses from that list. If the
+    resolver selected the sole installed preset and no choice list remains, say
+    only one preset is installed and use that preset for both Plan and Work
+    unless the user cancels. Write the split starter config from
+    [Bench onboarding](references/onboarding.md). The Plan prompt must tell the
+    Plan agent to write the approved Work prompt to a file that the human can
+    provide to the Work tab.
 14. After writing the starter config, rerun the resolver with the same
     `--repo-root` and `--brief`, but omit the temporary explicit Plan, Work, and
     Diff selections used for first-run choices. Use the refreshed `harnesses`,

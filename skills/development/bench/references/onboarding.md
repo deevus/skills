@@ -105,10 +105,13 @@ materializes the final resolved Diff value instead: `comview`, `hunk`, or
 
 ## Advanced split configuration
 
-Use the advanced split when the user wants separate Plan and Work tabs. Ask for
-the Plan harness and the Work harness from the installed presets. If only one
-preset is installed, tell the user only one harness is available and use it for
-both tabs unless they cancel.
+Use the advanced split when the user wants separate Plan and Work tabs. Always
+offer this workflow shape during first-run onboarding, even when only one agent
+preset is installed. Two tabs can run two instances of the same harness.
+
+If multiple presets are installed, ask for the Plan harness and the Work harness
+from the installed presets. If only one preset is installed, tell the user only
+one harness is available and use it for both tabs unless they cancel.
 
 The Plan harness gets a prompt. It must read the brief, write a plan, stop for
 approval, and write the final Work prompt to a file. The human can then provide
