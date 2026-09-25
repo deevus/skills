@@ -1,13 +1,6 @@
----
-name: bench-diff-hunk
-description: >
-  Use when bench selected Hunk as the optional diff companion for an isolated
-  bench workspace.
----
-
 # Bench Diff Hunk
 
-Build the Hunk companion for `bench`. This skill owns Hunk range recipes,
+Build the Hunk companion for `bench`. This reference owns Hunk range recipes,
 `--watch` command construction, session verification, brief additions, and the
 pointer to Hunk's bundled review skill.
 
@@ -18,8 +11,8 @@ companion title: Diff
 companion command: <hunk watch command>
 ```
 
-Do not open terminal tabs here. `bench-herdr`, `bench-supacode`, or the native
-terminal fallback owns terminal creation and focus.
+Do not open terminal tabs here. The selected UI route owns terminal creation
+and focus.
 
 ## Inputs from bench
 
