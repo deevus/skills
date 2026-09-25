@@ -235,13 +235,37 @@ detect viewers, construct viewer commands, or add review semantics.
 
 When no UI skill is available, keep the same separation of concerns:
 
-1. Start each harness tab in order, rooted at the bench.
-2. If a companion exists, start it in a separate terminal rooted at the bench.
-3. Return focus to the Work terminal when possible.
-4. Verify the shell cwd for each terminal before reporting success.
+1. If your host can open native terminal tabs, start each harness tab in order,
+   rooted at the bench. If a companion exists, start it in a separate terminal
+   rooted at the bench. Return focus to Work when possible and verify each shell
+   cwd before reporting success.
+2. If your host cannot open native terminal tabs, print paste-ready commands for
+   the human. Print one command per ordered tab:
 
-If you cannot verify cwd or keep Work separate from Plan and the companion,
-report that setup is incomplete.
+   ```text
+   <Title>: cd <shell-quoted-bench-path> && <shell-quoted argv or companion command>
+   ```
+
+   Shell-quote the bench path and every harness argv element. Keep argv arrays
+   unchanged until this display boundary. For a companion, append the companion
+   command after `&&` exactly as produced by the selected diff reference.
+
+   Example:
+
+   ```text
+   Work: cd '/path/to/bench' && claude --permission-mode plan 'Read /tmp/brief.md, then plan before edits.'
+   ```
+
+3. After printing commands, ask with a numbered list:
+   1. I started the commands in separate terminals.
+   2. I need help starting them.
+
+   On option 1, accept the human confirmation as native launch verification and
+   complete the bench. On option 2, keep the workspace and brief, report that
+   setup is awaiting terminal launch, and repeat the commands.
+
+If native terminal state cannot be machine-verified, do not claim it was
+machine-verified; say that launch was confirmed by the human.
 
 ## Final verification
 
@@ -250,11 +274,23 @@ Before reporting success, confirm:
 - the workspace root and VCS metadata are correct;
 - the environment setup completed;
 - the handoff brief exists outside the workspace;
-- each harness process started from the bench root;
-- any companion process started from the bench root;
-- the selected diff integration's verification passed;
+- for Herdr and Supacode, each harness process started from the bench root;
+- for manual native launch, the human confirmed starting each printed command,
+  and every printed command began with `cd <bench>`;
+- for Herdr and Supacode, any companion process started from the bench root;
+- for manual native launch with a companion, the human confirmed starting the
+  printed companion command;
+- the selected diff integration's verification passed when a companion exists;
 - the UI is focused back on Work when a UI is available; and
 - review benches have not pushed or mutated someone else's branch.
+
+In the final report, distinguish diff states:
+
+- If `diff.tool == "none"` and `diff.available == []`, say: "No diff viewer is
+  installed; Comview and Hunk are optional."
+- If `diff.tool == "none"` and `diff.available` is not empty, say that no
+  companion was requested.
+- If a viewer is selected, report its name and companion command.
 
 Fail closed on missing sessions, unexpected tabs, ambiguous cwd, unresolved
 configuration, or unavailable executables.
