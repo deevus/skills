@@ -87,7 +87,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
         self.assertEqual(result["harness"]["role"], "work")
         self.assertEqual(result["harnesses"], [result["harness"]])
 
-    def test_missing_files_default_to_ask_harness_and_auto_none_diff(self) -> None:
+    def test_missing_files_with_zero_harnesses_stay_unresolved_and_auto_none_diff(self) -> None:
         result = self.resolve()
 
         self.assertEqual(
@@ -118,6 +118,57 @@ class ResolveBenchConfigTests(unittest.TestCase):
                 },
             },
         )
+
+    def test_missing_files_auto_select_the_only_available_harness(self) -> None:
+        cases = {
+            "claude": [
+                "claude",
+                "--permission-mode",
+                "plan",
+                f"Read {self.brief}, then plan before edits.",
+            ],
+            "pi": [
+                "pi",
+                f"@{self.brief}",
+                f"Read {self.brief}, then plan before edits.",
+            ],
+        }
+        for tool, argv in cases.items():
+            with self.subTest(tool=tool):
+                self.executables = {tool}
+
+                result = self.resolve()
+
+                self.assertEqual(
+                    result["harness"],
+                    {
+                        "role": "work",
+                        "title": "Work",
+                        "tool": tool,
+                        "argv": argv,
+                        "available": [tool],
+                        "selection_required": False,
+                    },
+                )
+                self.assertEqual(result["harnesses"], [result["harness"]])
+
+    def test_missing_files_with_two_available_harnesses_require_selection(self) -> None:
+        self.executables.update({"claude", "pi"})
+
+        result = self.resolve()
+
+        self.assertEqual(
+            result["harness"],
+            {
+                "role": "work",
+                "title": "Work",
+                "tool": None,
+                "argv": [],
+                "available": ["claude", "pi"],
+                "selection_required": True,
+            },
+        )
+        self.assertEqual(result["harnesses"], [result["harness"]])
 
     def test_reads_xdg_config_before_home_config_when_xdg_is_set(self) -> None:
         self.executables.add("claude")
@@ -415,6 +466,29 @@ class ResolveBenchConfigTests(unittest.TestCase):
         self.assertEqual(result["harnesses"][1]["tool"], "custom")
         self.assertEqual(result["harnesses"][1]["argv"], ["pi", "--model", "openai-codex/gpt-5.6-astra"])
         self.assertEqual(result["harness"], result["harnesses"][1])
+
+
+    def test_role_keyed_ask_harnesses_auto_select_the_only_available_harness(self) -> None:
+        self.executables.add("pi")
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "plan"
+            tool = "ask"
+            prompt = "Plan from {brief}"
+            """
+        )
+
+        result = self.resolve()
+
+        self.assertEqual([item["role"] for item in result["harnesses"]], ["plan", "work"])
+        self.assertEqual(result["harnesses"][0]["tool"], "pi")
+        self.assertEqual(result["harnesses"][0]["argv"], ["pi", f"@{self.brief}", f"Plan from {self.brief}"])
+        self.assertEqual(result["harness"]["tool"], "pi")
+        self.assertEqual(
+            result["harness"]["argv"],
+            ["pi", f"@{self.brief}", f"Read {self.brief}, then plan before edits."],
+        )
 
     def test_omitted_prompt_in_role_entry_clears_inherited_prompt(self) -> None:
         self.executables.add("pi")

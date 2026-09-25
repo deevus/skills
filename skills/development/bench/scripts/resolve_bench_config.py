@@ -322,16 +322,19 @@ def resolve_harness(
     if tool == "ask":
         if config.permission_mode is not None:
             raise ConfigError("harness.permission_mode cannot be used when harness.tool is ask")
-        return with_role(
-            {
-                "tool": None,
-                "argv": [],
-                "available": available,
-                "selection_required": True,
-            },
-            role=role,
-            title=title,
-        )
+        if len(available) == 1:
+            tool = available[0]
+        else:
+            return with_role(
+                {
+                    "tool": None,
+                    "argv": [],
+                    "available": available,
+                    "selection_required": True,
+                },
+                role=role,
+                title=title,
+            )
 
     if tool == "claude":
         permission_mode = config.permission_mode or "plan"
