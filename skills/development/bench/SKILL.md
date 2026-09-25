@@ -56,16 +56,17 @@ and viewer-specific brief text.
 6. If any Plan or Work harness has `selection_required` true, use its
    `available` list as the only supported choices:
    - If `available` is empty, stop. Report that no supported harness executable
-     was found and tell the user to install Claude or Pi, or configure a custom
-     argv command with [configuration](references/configuration.md).
+     was found and tell the user to install Claude, Codex, or Pi, or configure a
+     custom argv command with [configuration](references/configuration.md).
    - If `available` has one item, stop and report an internal resolver error;
      the resolver should have selected the only installed preset.
-   - If `available` has both `claude` and `pi`, ask once with a numbered list
-     generated in that order. For the no-config first-run branch, label them as
-     starter presets: `Claude starter — one Work tab in plan mode` and
-     `Pi starter — one Work tab prompted to plan before edits`. Both starter
-     presets use one Work tab for planning and implementation; do not suggest a
-     separate Plan role during onboarding.
+   - If `available` has multiple items, ask once with a numbered list generated
+     in `available` order. For the no-config first-run branch, label them as
+     starter presets: `Claude starter — one Work tab in plan mode`,
+     `Codex starter — one Work tab prompted to plan before edits`, and
+     `Pi starter — one Work tab prompted to plan before edits`. Starter presets
+     use one Work tab for planning and implementation; do not suggest a separate
+     Plan role during onboarding.
 
    Rerun with `--plan-harness-tool <tool>` for Plan or `--harness-tool <tool>`
    for Work. Include any earlier explicit selections on every rerun, so later

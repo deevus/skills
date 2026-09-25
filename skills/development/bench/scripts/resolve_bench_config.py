@@ -17,7 +17,7 @@ DEFAULT_PROMPT = "Read {brief}, then plan before edits."
 CLAUDE_PERMISSION_MODES = frozenset(
     {"acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"}
 )
-HARNESS_TOOLS = frozenset({"ask", "claude", "pi"})
+HARNESS_TOOLS = frozenset({"ask", "claude", "codex", "pi"})
 HARNESS_ROLES = frozenset({"plan", "work"})
 ROLE_ORDER = ("plan", "work")
 ROLE_TITLES = {"plan": "Plan", "work": "Work"}
@@ -298,7 +298,7 @@ def resolve_harness(
     title: str,
 ) -> dict[str, Any]:
     prompt = render_prompt(config, brief=brief)
-    available = available_tools(["claude", "pi"], which)
+    available = available_tools(["claude", "codex", "pi"], which)
 
     if config.command is not None:
         if config.permission_mode is not None:
@@ -347,6 +347,24 @@ def resolve_harness(
         return with_role(
             {
                 "tool": "claude",
+                "argv": argv,
+                "available": available,
+                "selection_required": False,
+            },
+            role=role,
+            title=title,
+        )
+
+    if tool == "codex":
+        if config.permission_mode is not None:
+            raise ConfigError("harness.permission_mode is not supported for codex")
+        require_executable("codex", which)
+        argv = ["codex"]
+        if prompt is not None:
+            argv.append(prompt)
+        return with_role(
+            {
+                "tool": "codex",
                 "argv": argv,
                 "available": available,
                 "selection_required": False,

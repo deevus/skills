@@ -127,6 +127,10 @@ class ResolveBenchConfigTests(unittest.TestCase):
                 "plan",
                 f"Read {self.brief}, then plan before edits.",
             ],
+            "codex": [
+                "codex",
+                f"Read {self.brief}, then plan before edits.",
+            ],
             "pi": [
                 "pi",
                 f"@{self.brief}",
@@ -152,8 +156,8 @@ class ResolveBenchConfigTests(unittest.TestCase):
                 )
                 self.assertEqual(result["harnesses"], [result["harness"]])
 
-    def test_missing_files_with_two_available_harnesses_require_selection(self) -> None:
-        self.executables.update({"claude", "pi"})
+    def test_missing_files_with_multiple_available_harnesses_require_selection(self) -> None:
+        self.executables.update({"claude", "codex", "pi"})
 
         result = self.resolve()
 
@@ -164,7 +168,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
                 "title": "Work",
                 "tool": None,
                 "argv": [],
-                "available": ["claude", "pi"],
+                "available": ["claude", "codex", "pi"],
                 "selection_required": True,
             },
         )
@@ -360,6 +364,55 @@ class ResolveBenchConfigTests(unittest.TestCase):
                 result = self.resolve()
 
                 self.assertEqual(result["harness"]["argv"][2], mode)
+
+    def test_codex_renders_prompt_as_positional_argument(self) -> None:
+        self.executables.add("codex")
+        self.write_repo(
+            """
+            [harness]
+            tool = "codex"
+            """
+        )
+
+        result = self.resolve()
+
+        self.assertEqual(
+            result["harness"],
+            {
+                "role": "work",
+                "title": "Work",
+                "tool": "codex",
+                "argv": ["codex", f"Read {self.brief}, then plan before edits."],
+                "available": ["codex"],
+                "selection_required": False,
+            },
+        )
+
+    def test_role_keyed_codex_without_prompt_starts_without_brief_prompt(self) -> None:
+        self.executables.add("codex")
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "work"
+            tool = "codex"
+            """
+        )
+
+        result = self.resolve()
+
+        self.assertEqual(result["harness"]["argv"], ["codex"])
+
+    def test_codex_rejects_permission_mode(self) -> None:
+        self.executables.add("codex")
+        self.write_repo(
+            """
+            [harness]
+            tool = "codex"
+            permission_mode = "plan"
+            """
+        )
+
+        self.assert_config_error("permission_mode.*codex")
 
     def test_pi_rejects_permission_mode(self) -> None:
         self.executables.add("pi")

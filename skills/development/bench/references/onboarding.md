@@ -19,11 +19,11 @@ but they are advanced configuration rather than the onboarding default.
 
 Harness discovery for `tool = "ask"` uses this matrix:
 
-| Installed Claude/Pi presets | Result                                                             |
-| --------------------------- | ------------------------------------------------------------------ |
-| none                        | Unresolved; bench reports installation or custom-command guidance. |
-| one                         | The sole preset is selected automatically.                         |
-| both                        | The user selects Claude starter or Pi starter.                     |
+| Installed Claude/Codex/Pi presets | Result                                                             |
+| --------------------------------- | ------------------------------------------------------------------ |
+| none                              | Unresolved; bench reports installation or custom-command guidance. |
+| one                               | The sole preset is selected automatically.                         |
+| multiple                          | The user selects Claude, Codex, or Pi starter.                     |
 
 Resolver errors, malformed TOML, and unresolved selections never write
 configuration. Explicit configured tools still require their executable on
@@ -43,6 +43,30 @@ prompt = "Read {brief}, then plan before edits."
 [diff]
 tool = "auto"
 ```
+
+Use the Codex starter when Codex is the preferred single Work harness. Codex
+model selection depends on the local Codex CLI setup, so this starter uses the
+user's Codex defaults.
+
+```toml
+[harness]
+tool = "codex"
+prompt = "Read {brief}, then plan before edits."
+
+[diff]
+tool = "auto"
+```
+
+If a team has a standard Codex model, replace `tool = "codex"` with a command
+that names that model, for example:
+
+```toml
+[harness]
+command = ["codex", "--model", "<team-codex-model>"]
+prompt = "Read {brief}, then plan before edits."
+```
+
+Replace `<team-codex-model>` before use.
 
 Use the Pi starter when Pi is the preferred single Work harness. Pi model
 selection depends on the local Pi environment, so this starter uses the user's
@@ -81,6 +105,18 @@ Diff choice:
 ```toml
 [harness]
 command = ["claude", "--model", "opus-5.5", "--permission-mode", "plan"]
+prompt = "Read {brief}, then plan before edits."
+
+[diff]
+tool = "<resolved-diff-tool>"
+```
+
+When first-run initialization writes the Codex starter, use the local Codex
+defaults unless the user or repository gives a standard Codex model command:
+
+```toml
+[harness]
+tool = "codex"
 prompt = "Read {brief}, then plan before edits."
 
 [diff]
