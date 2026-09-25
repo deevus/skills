@@ -13,9 +13,15 @@ a Local file:
   `~/.config/bench/config.toml`.
 - Local: `<source-repo>/.bench/config.toml`.
 
-Starter configurations intentionally use one Work tab. The same harness plans
-before editing and then performs the work. Split Plan/Work tabs are supported,
-but they are advanced configuration rather than the onboarding default.
+After choosing Global or Local, ask which workflow shape to initialize:
+
+1. Simple starter — one Work tab. Recommended.
+2. Advanced split — Plan tab plus Work tab.
+
+The simple starter uses one Work tab. The same harness plans before editing and
+then performs the work. The advanced split starts a Plan harness and a separate
+Work harness. It is available for users who want to try separate planning and
+implementation agents.
 
 Harness discovery for `tool = "ask"` uses this matrix:
 
@@ -29,7 +35,7 @@ Resolver errors, malformed TOML, and unresolved selections never write
 configuration. Explicit configured tools still require their executable on
 `PATH`. Custom commands are not auto-detected.
 
-## Starter configurations
+## Simple starter configurations
 
 Use the Claude starter when Claude is the preferred single Work harness. Pin the
 model to the current state-of-the-art minus one model. At the moment, use Opus
@@ -97,6 +103,45 @@ Comview or Hunk changes the companion automatically. First-run initialization
 materializes the final resolved Diff value instead: `comview`, `hunk`, or
 `none`.
 
+## Advanced split configuration
+
+Use the advanced split when the user wants separate Plan and Work tabs. Ask for
+the Plan harness and the Work harness from the installed presets. If only one
+preset is installed, tell the user only one harness is available and use it for
+both tabs unless they cancel.
+
+The Plan harness gets a prompt. It must read the brief, write a plan, stop for
+approval, and write the final Work prompt to a file. The human can then provide
+that file to the Work tab after approving the plan. The Work harness starts
+without a prompt.
+
+Use this Plan prompt:
+
+```text
+Read {brief}, then write a plan before edits. When the plan is ready, stop and wait for approval. Write the final Work prompt to a file next to the brief so the human can provide it to the Work agent after approving the plan.
+```
+
+A split config with Claude for Plan and Pi for Work looks like this:
+
+```toml
+[[harnesses]]
+role = "plan"
+title = "Plan"
+command = ["claude", "--model", "claude-opus-5-5", "--permission-mode", "plan"]
+prompt = "Read {brief}, then write a plan before edits. When the plan is ready, stop and wait for approval. Write the final Work prompt to a file next to the brief so the human can provide it to the Work agent after approving the plan."
+
+[[harnesses]]
+role = "work"
+title = "Work"
+tool = "pi"
+
+[diff]
+tool = "auto"
+```
+
+For other harness choices, use the selected harness's simple starter command or
+tool. Keep the Plan prompt. Omit the Work prompt so Work starts empty.
+
 ## Diff companion recommendation
 
 When no diff viewer is installed, recommend installing Hunk from
@@ -148,6 +193,15 @@ prompt = "Read {brief}, then plan before edits."
 tool = "<resolved-diff-tool>"
 ```
 
+For advanced split first-run initialization, materialize the final Diff choice
+in the split config:
+
+```toml
+[diff]
+tool = "<resolved-diff-tool>"
+```
+
 `<resolved-diff-tool>` is `comview`, `hunk`, or `none`. If Work resolved to
-`custom` or a split Plan/Work configuration somehow exists, do not invent a
-starter config. Report the resolved configuration and continue without writing.
+`custom` or a split Plan/Work configuration already exists before onboarding, do
+not invent a starter config. Report the resolved configuration and continue
+without writing.

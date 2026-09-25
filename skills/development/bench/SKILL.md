@@ -94,14 +94,27 @@ and viewer-specific brief text.
    writing. If it now exists, stop and ask the user to reconcile it rather than
    overwriting it.
 
-10. If the resolver returned a Plan harness, or the resolved Work harness has
-    `tool: custom`, report the resolved configuration and continue without
-    writing a starter config.
-11. Otherwise, write the starter config from
+10. If the resolver already returned a Plan harness, or the resolved Work
+    harness has `tool: custom`, report the resolved configuration and continue
+    without writing a starter config.
+11. Ask which workflow shape to initialize:
+
+    1. Simple starter — one Work tab. Recommended.
+    2. Advanced split — Plan tab plus Work tab.
+
+    Explain that the advanced split is for users who want to try a separate
+    planning harness and implementation harness.
+
+12. For the simple starter, write the starter config from
     [Bench onboarding](references/onboarding.md) for the resolved Work harness
-    and final Diff tool. Use the onboarding file as the source of truth for
-    model choices and starter TOML.
-12. After writing the starter config, rerun the resolver with the same
+    and final Diff tool.
+13. For the advanced split, ask for Plan and Work harnesses from the resolved
+    Work harness's `available` list. If only one harness is available, say so
+    and use it for both tabs unless the user cancels. Write the split starter
+    config from [Bench onboarding](references/onboarding.md). The Plan prompt
+    must tell the Plan agent to write the approved Work prompt to a file that
+    the human can provide to the Work tab.
+14. After writing the starter config, rerun the resolver with the same
     `--repo-root` and `--brief`, but omit the temporary explicit Plan, Work, and
     Diff selections used for first-run choices. Use the refreshed `harnesses`,
     legacy `harness`, and `diff` output for the brief and UI launch.
