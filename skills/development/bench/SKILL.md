@@ -94,9 +94,17 @@ and viewer-specific brief text.
    writing. If it now exists, stop and ask the user to reconcile it rather than
    overwriting it.
 
-10. Write the starter config from [Bench onboarding](references/onboarding.md)
-    for the resolved Work harness and final Diff tool. Use the onboarding file
-    as the source of truth for model choices and starter TOML.
+10. If the resolver returned a Plan harness, or the resolved Work harness has
+    `tool: custom`, report the resolved configuration and continue without
+    writing a starter config.
+11. Otherwise, write the starter config from
+    [Bench onboarding](references/onboarding.md) for the resolved Work harness
+    and final Diff tool. Use the onboarding file as the source of truth for
+    model choices and starter TOML.
+12. After writing the starter config, rerun the resolver with the same
+    `--repo-root` and `--brief`, but omit the temporary explicit Plan, Work, and
+    Diff selections used for first-run choices. Use the refreshed `harnesses`,
+    legacy `harness`, and `diff` output for the brief and UI launch.
 
 Pass each returned harness tab's `argv` to the UI adapter unchanged. Each value
 is an argv list, not a shell command string. Keep the legacy `harness` object as
@@ -214,8 +222,10 @@ When no UI skill is available, keep the same separation of concerns:
 
 1. If your host can open native terminal tabs, start each harness tab in order,
    rooted at the bench. If a companion exists, start it in a separate terminal
-   rooted at the bench. Return focus to Work when possible and verify each shell
-   cwd before reporting success.
+   rooted at the bench. Return focus to Work when possible. Before reporting
+   success, verify each shell cwd and verify a running harness process or
+   session. If the host cannot verify process or session state, use the manual
+   confirmation path instead.
 2. If your host cannot open native terminal tabs, print paste-ready commands for
    the human. Print one command per ordered tab:
 
@@ -251,10 +261,12 @@ Before reporting success, confirm:
 - the workspace root and VCS metadata are correct;
 - the environment setup completed;
 - the handoff brief exists outside the workspace;
-- for Herdr and Supacode, each harness process started from the bench root;
+- for Herdr, Supacode, and auto-opened native tabs, each harness process or
+  session is running from the bench root;
 - for manual native launch, the human confirmed starting each printed command,
   and every printed command began with `cd <bench>`;
-- for Herdr and Supacode, any companion process started from the bench root;
+- for Herdr, Supacode, and auto-opened native tabs, any companion process or
+  session is running from the bench root;
 - for manual native launch with a companion, the human confirmed starting the
   printed companion command;
 - the selected diff integration's verification passed when a companion exists;
@@ -265,7 +277,8 @@ In the final report, distinguish diff states:
 
 - If `diff.tool == "none"` and `diff.available == []`, say: "No diff viewer is
   installed; Hunk is recommended. Install it from <https://www.hunk.dev/>.
-  Comview is an available alternative at <https://github.com/rockorager/comview>."
+  Comview is an available alternative at
+  <https://github.com/rockorager/comview>."
 - If `diff.tool == "none"` and `diff.available` is not empty, say that no
   companion was requested.
 - If a viewer is selected, report its name and companion command.

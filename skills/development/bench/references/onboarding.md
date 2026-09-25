@@ -37,7 +37,7 @@ model to the current state-of-the-art minus one model. At the moment, use Opus
 
 ```toml
 [harness]
-command = ["claude", "--model", "opus-5.5", "--permission-mode", "plan"]
+command = ["claude", "--model", "claude-opus-5-5", "--permission-mode", "plan"]
 prompt = "Read {brief}, then plan before edits."
 
 [diff]
@@ -117,7 +117,7 @@ Diff choice:
 
 ```toml
 [harness]
-command = ["claude", "--model", "opus-5.5", "--permission-mode", "plan"]
+command = ["claude", "--model", "claude-opus-5-5", "--permission-mode", "plan"]
 prompt = "Read {brief}, then plan before edits."
 
 [diff]
