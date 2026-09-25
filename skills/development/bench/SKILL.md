@@ -28,8 +28,8 @@ diff viewer choice.
 - diff integration routing; and
 - final readiness checks.
 
-`bench` does not build viewer commands or manage viewer review state. Use the
-selected diff integration for the optional companion title, companion command,
+`bench` does not build viewer commands or manage viewer review state. Read only
+the selected diff reference for the optional companion title, companion command,
 and viewer-specific brief text.
 
 ## Resolve configuration
@@ -134,22 +134,22 @@ For "bench PR ... for code review":
 7. Do not push from a review bench.
 
 Put review scope, constraints, the verified file count, and the resolved base in
-the brief. Let the selected diff integration add its own range and interaction
+the brief. Let the selected diff reference add its own range and interaction
 instructions.
 
 ## Route the diff integration
 
 Use the resolver's final `diff.tool` value:
 
-- `comview`: use `bench-diff-comview` to produce the companion title, companion
-  command, and brief additions.
-- `hunk`: use `bench-diff-hunk` to produce the companion title, companion
-  command, session verification, and brief additions.
-- `none`: do not create a companion.
+- `comview`: read [Bench Diff Comview](references/diff-comview.md) to produce
+  the companion title, companion command, and brief additions.
+- `hunk`: read [Bench Diff Hunk](references/diff-hunk.md) to produce the
+  companion title, companion command, session verification, and brief additions.
+- `none`: do not create a companion and do not read a diff integration reference.
 
-Pass the bench type and VCS facts to the diff integration: task, review, or
-stack; Git or Jujutsu; base branch or revset; review head; and any path scope.
-Do not duplicate its range recipes in this core skill.
+Pass the bench type and VCS facts to the diff reference: task, review, or stack;
+Git or Jujutsu; base branch or revset; review head; and any path scope. Do not
+duplicate its range recipes in this core skill.
 
 ## Finish the handoff brief
 
@@ -178,12 +178,14 @@ printf 'HERDR_ENV=%s\n' "${HERDR_ENV:-}"
 command -v supacode >/dev/null && echo supacode || echo no-supacode
 ```
 
-- If `HERDR_ENV=1`, use `bench-herdr` for terminal mechanics.
-- Else if `supacode` exists, use `bench-supacode` for Supacode mechanics.
-- Else use native terminals when available.
+- If `HERDR_ENV=1`, read [Bench Herdr](references/ui-herdr.md) for terminal
+  mechanics.
+- Else if `supacode` exists, read [Bench Supacode](references/ui-supacode.md)
+  for Supacode mechanics.
+- Else use native terminals when available and do not read a UI reference.
 
 Every UI path receives the same inputs: bench path, short title, ordered harness
-tab specs, and an optional companion title plus command. UI skills must not
+tab specs, and an optional companion title plus command. UI references must not
 detect viewers, construct viewer commands, or add review semantics.
 
 ## Native terminal fallback

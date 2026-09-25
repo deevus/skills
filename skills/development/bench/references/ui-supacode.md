@@ -1,15 +1,7 @@
----
-name: bench-supacode
-description:
-  Use when a bench workspace must be opened, arranged, verified, or operated in
-  Supacode.
----
-
 # Bench Supacode
 
-Supacode terminal mechanics for a bench. If `bench` has not already been loaded
-for this request, load `bench` first and follow its generic workflow before
-doing these UI steps.
+Supacode terminal mechanics for a bench. Use this reference only after the core
+`bench` workflow has created the native workspace and selected Supacode routing.
 
 ## Principles
 
@@ -29,13 +21,13 @@ doing these UI steps.
   close those tabs only after every restored tab proves to be a single idle
   shell in the bench, and it never writes `layouts.json`.
 - Do not detect viewers, construct companion commands, or add review semantics
-  in this skill.
+  in this reference.
 
 ## Open and arrange the finished checkout
 
-Resolve `scripts/setup_bench.py` relative to this skill's directory. Call it
-once after the checkout, environment, handoff brief, harness tab specs, and
-optional companion input are ready.
+Resolve `scripts/setup_bench.py` relative to the loaded `bench` skill directory.
+Call it once after the checkout, environment, handoff brief, harness tab specs,
+and optional companion input are ready.
 
 Use the multi-harness path when `bench` returns `harnesses`:
 
@@ -70,7 +62,7 @@ if [[ -n ${COMPANION_TITLE:-} || -n ${COMPANION_COMMAND:-} ]]; then
   )
 fi
 
-python3 <bench-supacode-skill-dir>/scripts/setup_bench.py \
+python3 <bench-skill-dir>/scripts/setup_bench.py \
   --path "$BENCH_PATH" \
   --title "$SHORT_TITLE" \
   --color "$COLOUR" \
@@ -93,7 +85,7 @@ For compatibility, the sidecar still accepts the old single-harness form:
 ```bash
 HARNESS=(claude --permission-mode plan "Read <brief>, then plan before edits.")
 
-python3 <bench-supacode-skill-dir>/scripts/setup_bench.py \
+python3 <bench-skill-dir>/scripts/setup_bench.py \
   --path "$BENCH_PATH" \
   --title "$SHORT_TITLE" \
   --color "$COLOUR" \
@@ -222,4 +214,4 @@ before reporting success. The sidecar leaves `Work` focused.
 ## Hosts without Supacode
 
 If `supacode` is not installed, return to `bench` and use the native-only path
-or another UI skill selected by the environment.
+or Herdr path selected by the environment.

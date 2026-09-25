@@ -1,17 +1,9 @@
----
-name: bench-herdr
-description:
-  Use when a bench workspace must be opened, arranged, verified, or operated
-  inside Herdr.
----
-
 # Bench Herdr
 
-Herdr terminal mechanics for a bench. If `bench` has not already been loaded for
-this request, load `bench` first and follow its generic workflow before doing
-these UI steps.
+Herdr terminal mechanics for a bench. Use this reference only after the core
+`bench` workflow has created the native workspace and selected Herdr routing.
 
-This skill applies when `HERDR_ENV=1`.
+This reference applies when `HERDR_ENV=1`.
 
 ## Inputs
 
@@ -33,7 +25,7 @@ companion pair is optional. If one of companion title or command is missing,
 stop and return to `bench` for corrected inputs.
 
 Do not detect viewers, construct companion commands, or add review semantics in
-this skill. Treat the companion as a generic terminal command.
+this reference. Treat the companion as a generic terminal command.
 
 ## Sequence
 

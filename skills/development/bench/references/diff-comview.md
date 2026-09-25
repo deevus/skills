@@ -1,15 +1,8 @@
----
-name: bench-diff-comview
-description: >
-  Use when bench selected Comview as the optional diff companion for an isolated
-  bench workspace.
----
-
 # Bench Diff Comview
 
-Build the Comview companion for `bench`. This skill owns Comview range recipes,
-watcher command construction, brief additions, and routing later agent work to
-the `comview` skill.
+Build the Comview companion for `bench`. This reference owns Comview range
+recipes, watcher command construction, brief additions, and routing later agent
+work to the `comview` skill.
 
 Return a generic companion to the UI layer:
 
@@ -18,8 +11,8 @@ companion title: Diff
 companion command: <comview watcher command>
 ```
 
-Do not open terminal tabs here. `bench-herdr`, `bench-supacode`, or the native
-terminal fallback owns terminal creation and focus.
+Do not open terminal tabs here. The selected UI route owns terminal creation
+and focus.
 
 ## Inputs from bench
 
