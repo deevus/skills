@@ -97,6 +97,19 @@ Comview or Hunk changes the companion automatically. First-run initialization
 materializes the final resolved Diff value instead: `comview`, `hunk`, or
 `none`.
 
+## Diff companion recommendation
+
+When no diff viewer is installed, recommend installing Hunk from
+<https://www.hunk.dev/>. The quick install command is:
+
+```bash
+curl -fsSL https://hunk.dev/install.sh | sh
+```
+
+Comview is an available alternative at <https://github.com/rockorager/comview>.
+Keep starter configs on `diff.tool = "auto"` so bench can use either viewer
+after installation.
+
 ## First-run files to write
 
 When first-run initialization writes the Claude starter, materialize the final

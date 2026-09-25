@@ -264,7 +264,8 @@ Before reporting success, confirm:
 In the final report, distinguish diff states:
 
 - If `diff.tool == "none"` and `diff.available == []`, say: "No diff viewer is
-  installed; Comview and Hunk are optional."
+  installed; Hunk is recommended. Install it from <https://www.hunk.dev/>.
+  Comview is an available alternative at <https://github.com/rockorager/comview>."
 - If `diff.tool == "none"` and `diff.available` is not empty, say that no
   companion was requested.
 - If a viewer is selected, report its name and companion command.
