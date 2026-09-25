@@ -32,8 +32,8 @@ Development skills capture reusable coding workflows.
 
 - `bench` — core orchestration for isolated task or review benches. It resolves
   configurable harness and diff choices, creates the workspace, routes terminal
-  setup, and reads on-demand references for Comview, Hunk, Supacode, and Herdr
-  integrations only when those branches are selected.
+  setup, and reads on-demand references for Comview, Hunk, Supacode, Herdr, and
+  Orca integrations only when those branches are selected.
 
 ### Deevus
 
@@ -70,5 +70,5 @@ find .agents/skills -name SKILL.md | sort
 
 Expected skill names include `bench`, `comview`, `comview-guide`,
 `deevus-jujutsu`, `ste-plain-writing`, and `summarizing-pr-diffs`. Bench's
-Comview, Hunk, Supacode, and Herdr integration references install under
+Comview, Hunk, Supacode, Herdr, and Orca integration references install under
 `.agents/skills/bench/references/` rather than as separate skills.

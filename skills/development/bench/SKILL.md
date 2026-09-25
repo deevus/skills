@@ -219,11 +219,14 @@ Before doing UI setup, check the environment from the current shell:
 
 ```bash
 printf 'HERDR_ENV=%s\n' "${HERDR_ENV:-}"
+printf 'ORCA_TERMINAL_HANDLE=%s\n' "${ORCA_TERMINAL_HANDLE:-}"
 command -v supacode >/dev/null && echo supacode || echo no-supacode
 ```
 
 - If `HERDR_ENV=1`, read [Bench Herdr](references/ui-herdr.md) for terminal
   mechanics.
+- Else if `ORCA_TERMINAL_HANDLE` is set, read
+  [Bench Orca](references/ui-orca.md) for Orca mechanics.
 - Else if `supacode` exists, read [Bench Supacode](references/ui-supacode.md)
   for Supacode mechanics.
 - Else use native terminals when available and do not read a UI reference.
@@ -277,12 +280,12 @@ Before reporting success, confirm:
 - the workspace root and VCS metadata are correct;
 - the environment setup completed;
 - the handoff brief exists outside the workspace;
-- for Herdr, Supacode, and auto-opened native tabs, each harness process or
-  session is running from the bench root;
+- for Herdr, Orca, Supacode, and auto-opened native tabs, each harness process
+  or session is running from the bench root;
 - for manual native launch, the human confirmed starting each printed command,
   and every printed command began with `cd <bench>`;
-- for Herdr, Supacode, and auto-opened native tabs, any companion process or
-  session is running from the bench root;
+- for Herdr, Orca, Supacode, and auto-opened native tabs, any companion process
+  or session is running from the bench root;
 - for manual native launch with a companion, the human confirmed starting the
   printed companion command;
 - the selected diff integration's verification passed when a companion exists;
