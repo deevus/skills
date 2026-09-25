@@ -34,62 +34,10 @@ Configuration is read from lowest to highest precedence:
 Missing files are ignored. Repository values override user values, and explicit
 flags override both.
 
-## First-run setup
+## Onboarding
 
-When neither configuration file exists, `bench` resolves installed tools and
-then initializes one configuration file before creating the workspace. The setup
-asks whether to create a Global file for future repositories or a Local file for
-the current repository:
-
-- Global: `$XDG_CONFIG_HOME/bench/config.toml`, falling back to
-  `~/.config/bench/config.toml`.
-- Local: `<source-repo>/.bench/config.toml`.
-
-Starter configurations intentionally use one Work tab. The same harness plans
-before editing and then performs the work. Split Plan/Work tabs are supported,
-but they are advanced configuration rather than the onboarding default.
-
-Harness discovery for `tool = "ask"` uses this matrix:
-
-| Installed Claude/Pi presets | Result                                                             |
-| --------------------------- | ------------------------------------------------------------------ |
-| none                        | Unresolved; bench reports installation or custom-command guidance. |
-| one                         | The sole preset is selected automatically.                         |
-| both                        | The user selects Claude starter or Pi starter.                     |
-
-Resolver errors, malformed TOML, and unresolved selections never write
-configuration. Explicit configured tools still require their executable on
-`PATH`. Custom commands are not auto-detected.
-
-## Starter configurations
-
-Use the Claude starter when Claude is the preferred single Work harness:
-
-```toml
-[harness]
-tool = "claude"
-permission_mode = "plan"
-prompt = "Read {brief}, then plan before edits."
-
-[diff]
-tool = "auto"
-```
-
-Use the Pi starter when Pi is the preferred single Work harness:
-
-```toml
-[harness]
-tool = "pi"
-prompt = "Read {brief}, then plan before edits."
-
-[diff]
-tool = "auto"
-```
-
-The copy-ready examples use `diff.tool = "auto"` so installing or removing
-Comview or Hunk changes the companion automatically. First-run initialization
-materializes the final resolved Diff value instead: `comview`, `hunk`, or
-`none`.
+For first-run Global/Local setup and starter Claude/Pi configs, read
+[Bench onboarding](onboarding.md).
 
 ## Schema
 

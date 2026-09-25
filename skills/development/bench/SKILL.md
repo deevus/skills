@@ -78,9 +78,10 @@ and viewer-specific brief text.
 8. Stop on resolver errors. Do not guess when configuration is malformed, an
    executable is missing, or a required choice is unresolved.
 9. If neither config file existed before the first resolver run and the final
-   resolver output has no `selection_required: true` value, initialize
-   configuration before workspace creation. Say: "You need to set up a bench
-   configuration. Would you like it to be global or local?"
+   resolver output has no `selection_required: true` value, read
+   [Bench onboarding](references/onboarding.md), then initialize configuration
+   before workspace creation. Say: "You need to set up a bench configuration.
+   Would you like it to be global or local?"
 
    1. Global — create `$XDG_CONFIG_HOME/bench/config.toml`, falling back to
       `~/.config/bench/config.toml`, for future repositories.
@@ -92,34 +93,9 @@ and viewer-specific brief text.
    writing. If it now exists, stop and ask the user to reconcile it rather than
    overwriting it.
 
-10. Write a starter config for the resolved Work harness and final Diff tool.
-    For Claude, write:
-
-    ```toml
-    [harness]
-    tool = "claude"
-    permission_mode = "plan"
-    prompt = "Read {brief}, then plan before edits."
-
-    [diff]
-    tool = "<resolved-diff-tool>"
-    ```
-
-    For Pi, write:
-
-    ```toml
-    [harness]
-    tool = "pi"
-    prompt = "Read {brief}, then plan before edits."
-
-    [diff]
-    tool = "<resolved-diff-tool>"
-    ```
-
-    `<resolved-diff-tool>` is `comview`, `hunk`, or `none`. If Work resolved to
-    `custom` or a split Plan/Work configuration somehow exists, do not invent a
-    starter config; report the resolved configuration and continue without
-    writing.
+10. Write the starter config from [Bench onboarding](references/onboarding.md)
+    for the resolved Work harness and final Diff tool. Use the onboarding file
+    as the source of truth for model choices and starter TOML.
 
 Pass each returned harness tab's `argv` to the UI adapter unchanged. Each value
 is an argv list, not a shell command string. Keep the legacy `harness` object as
