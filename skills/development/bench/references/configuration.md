@@ -19,8 +19,8 @@ python3 <bench-skill-dir>/scripts/resolve_bench_config.py \
 
 After a user choice, run the same command again with `--harness-tool`,
 `--plan-harness-tool`, and/or `--diff-tool`. Include all earlier explicit
-selections on every rerun, so a later Plan, Work, or Diff choice does not drop an
-earlier choice.
+selections on every rerun, so a later Plan, Work, or Diff choice does not drop
+an earlier choice.
 
 ## Precedence
 
@@ -33,6 +33,63 @@ Configuration is read from lowest to highest precedence:
 
 Missing files are ignored. Repository values override user values, and explicit
 flags override both.
+
+## First-run setup
+
+When neither configuration file exists, `bench` resolves installed tools and
+then initializes one configuration file before creating the workspace. The setup
+asks whether to create a Global file for future repositories or a Local file for
+the current repository:
+
+- Global: `$XDG_CONFIG_HOME/bench/config.toml`, falling back to
+  `~/.config/bench/config.toml`.
+- Local: `<source-repo>/.bench/config.toml`.
+
+Starter configurations intentionally use one Work tab. The same harness plans
+before editing and then performs the work. Split Plan/Work tabs are supported,
+but they are advanced configuration rather than the onboarding default.
+
+Harness discovery for `tool = "ask"` uses this matrix:
+
+| Installed Claude/Pi presets | Result                                                             |
+| --------------------------- | ------------------------------------------------------------------ |
+| none                        | Unresolved; bench reports installation or custom-command guidance. |
+| one                         | The sole preset is selected automatically.                         |
+| both                        | The user selects Claude starter or Pi starter.                     |
+
+Resolver errors, malformed TOML, and unresolved selections never write
+configuration. Explicit configured tools still require their executable on
+`PATH`. Custom commands are not auto-detected.
+
+## Starter configurations
+
+Use the Claude starter when Claude is the preferred single Work harness:
+
+```toml
+[harness]
+tool = "claude"
+permission_mode = "plan"
+prompt = "Read {brief}, then plan before edits."
+
+[diff]
+tool = "auto"
+```
+
+Use the Pi starter when Pi is the preferred single Work harness:
+
+```toml
+[harness]
+tool = "pi"
+prompt = "Read {brief}, then plan before edits."
+
+[diff]
+tool = "auto"
+```
+
+The copy-ready examples use `diff.tool = "auto"` so installing or removing
+Comview or Hunk changes the companion automatically. First-run initialization
+materializes the final resolved Diff value instead: `comview`, `hunk`, or
+`none`.
 
 ## Schema
 
@@ -49,7 +106,10 @@ prompt = "Read {brief}, then plan before edits."
 tool = "auto" # auto | comview | hunk | none
 ```
 
-Use `[[harnesses]]` when a bench needs first-class harness tabs by role.
+Use `[[harnesses]]` only for advanced benches that need first-class harness tabs
+by role.
+
+### Advanced: split Plan and Work
 
 ```toml
 [[harnesses]]
@@ -72,7 +132,8 @@ tool = "comview"
 Defaults:
 
 - Missing `[harness]` and missing `[[harnesses]] role = "work"` behaves as Work
-  `tool = "ask"`.
+  `tool = "ask"`: auto-select the sole installed preset, ask when both Claude
+  and Pi are installed, and remain unresolved when neither is installed.
 - Missing legacy `harness.prompt` behaves as
   `"Read {brief}, then plan before edits."`.
 - Missing `prompt` in a `[[harnesses]]` entry means no initial prompt for that
@@ -207,11 +268,13 @@ It also returns `harnesses`, the ordered list of first-class harness tabs.
 }
 ```
 
-For `tool = "ask"`, `tool` is `null`, `argv` is empty, and `selection_required`
-is `true`. For `command`, `tool` is `"custom"` and `argv` contains the rendered
-command plus a prompt only when one is configured.
+For unresolved `tool = "ask"`, `tool` is `null`, `argv` is empty, and
+`selection_required` is `true`. If exactly one supported preset is installed,
+`tool = "ask"` resolves to that preset with `selection_required = false`. For
+`command`, `tool` is `"custom"` and `argv` contains the rendered command plus a
+prompt only when one is configured.
 
-## Split-harness handoff
+## Advanced split-harness handoff
 
 The first split-harness workflow is human-mediated. Plan starts with its
 configured prompt. Work can start with no prompt as an empty interactive agent.

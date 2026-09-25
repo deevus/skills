@@ -37,7 +37,11 @@ and viewer-specific brief text.
 1. Pick a stable handoff brief path outside the workspace.
 2. Write an initial brief from the request, ticket, or PR metadata only. Do not
    scout the codebase for the harness.
-3. Resolve `scripts/resolve_bench_config.py` relative to the loaded `bench`
+3. Before the first resolver run, check whether the user config and repository
+   config already exist. User config is `$XDG_CONFIG_HOME/bench/config.toml`, or
+   `~/.config/bench/config.toml` when `XDG_CONFIG_HOME` is unset. Repository
+   config is `<source-repo>/.bench/config.toml`.
+4. Resolve `scripts/resolve_bench_config.py` relative to the loaded `bench`
    skill directory. Run that installed resolver while passing the source
    repository with `--repo-root`:
 
@@ -47,37 +51,75 @@ and viewer-specific brief text.
      --brief /tmp/bench-brief.md
    ```
 
-4. Inspect `harnesses` in the resolver output. It is ordered by first-class UI
+5. Inspect `harnesses` in the resolver output. It is ordered by first-class UI
    tab role: optional Plan first, then Work.
-5. If the Plan harness exists and `selection_required` is true, ask once with a
-   numbered list:
-   1. Claude, plan mode.
-   2. Pi, plan before edits.
+6. If any Plan or Work harness has `selection_required` true, use its
+   `available` list as the only supported choices:
+   - If `available` is empty, stop. Report that no supported harness executable
+     was found and tell the user to install Claude or Pi, or configure a custom
+     argv command with [configuration](references/configuration.md).
+   - If `available` has one item, stop and report an internal resolver error;
+     the resolver should have selected the only installed preset.
+   - If `available` has both `claude` and `pi`, ask once with a numbered list
+     generated in that order. For the no-config first-run branch, label them as
+     starter presets: `Claude starter — one Work tab in plan mode` and
+     `Pi starter — one Work tab prompted to plan before edits`. Both starter
+     presets use one Work tab for planning and implementation; do not suggest a
+     separate Plan role during onboarding.
 
-   Then rerun the resolver with `--plan-harness-tool claude` or
-   `--plan-harness-tool pi`. Include any earlier explicit selections on every
-   rerun, so later Work or Diff choices do not drop the Plan choice.
+   Rerun with `--plan-harness-tool <tool>` for Plan or `--harness-tool <tool>`
+   for Work. Include any earlier explicit selections on every rerun, so later
+   Work or Diff choices do not drop Plan or Work choices.
 
-6. If the Work harness has `selection_required` true, ask once with a numbered
-   list:
-   1. Claude, plan mode.
-   2. Pi, plan before edits.
-
-   Then rerun the resolver with `--harness-tool claude` or `--harness-tool pi`.
-   Include any earlier explicit selections on every rerun, so later Diff choices
-   do not drop Plan or Work choices.
-
-7. If `diff.selection_required` is true, ask once with a numbered list:
-   1. Comview.
-   2. Hunk.
-   3. None.
-
-   Then rerun the resolver with `--diff-tool comview`, `--diff-tool hunk`, or
-   `--diff-tool none`. Include all earlier explicit Plan and Work selections on
-   this rerun.
-
+7. If `diff.selection_required` is true, ask once with a numbered list generated
+   from `diff.available`, followed by `None`. Then rerun the resolver with
+   `--diff-tool comview`, `--diff-tool hunk`, or `--diff-tool none`. Include all
+   earlier explicit Plan and Work selections on this rerun.
 8. Stop on resolver errors. Do not guess when configuration is malformed, an
    executable is missing, or a required choice is unresolved.
+9. If neither config file existed before the first resolver run and the final
+   resolver output has no `selection_required: true` value, initialize
+   configuration before workspace creation. Say: "You need to set up a bench
+   configuration. Would you like it to be global or local?"
+
+   1. Global — create `$XDG_CONFIG_HOME/bench/config.toml`, falling back to
+      `~/.config/bench/config.toml`, for future repositories.
+   2. Local — create `<source-repo>/.bench/config.toml` for this repository
+      only.
+
+   The selected scope is consent to create that file; do not ask a separate
+   Save-versus-Use-once question. Recheck the selected path immediately before
+   writing. If it now exists, stop and ask the user to reconcile it rather than
+   overwriting it.
+
+10. Write a starter config for the resolved Work harness and final Diff tool.
+    For Claude, write:
+
+    ```toml
+    [harness]
+    tool = "claude"
+    permission_mode = "plan"
+    prompt = "Read {brief}, then plan before edits."
+
+    [diff]
+    tool = "<resolved-diff-tool>"
+    ```
+
+    For Pi, write:
+
+    ```toml
+    [harness]
+    tool = "pi"
+    prompt = "Read {brief}, then plan before edits."
+
+    [diff]
+    tool = "<resolved-diff-tool>"
+    ```
+
+    `<resolved-diff-tool>` is `comview`, `hunk`, or `none`. If Work resolved to
+    `custom` or a split Plan/Work configuration somehow exists, do not invent a
+    starter config; report the resolved configuration and continue without
+    writing.
 
 Pass each returned harness tab's `argv` to the UI adapter unchanged. Each value
 is an argv list, not a shell command string. Keep the legacy `harness` object as
@@ -145,7 +187,8 @@ Use the resolver's final `diff.tool` value:
   the companion title, companion command, and brief additions.
 - `hunk`: read [Bench Diff Hunk](references/diff-hunk.md) to produce the
   companion title, companion command, session verification, and brief additions.
-- `none`: do not create a companion and do not read a diff integration reference.
+- `none`: do not create a companion and do not read a diff integration
+  reference.
 
 Pass the bench type and VCS facts to the diff reference: task, review, or stack;
 Git or Jujutsu; base branch or revset; review head; and any path scope. Do not
