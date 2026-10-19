@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import json
 import os
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+import xml.etree.ElementTree as ElementTree
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import quote
@@ -25,7 +28,8 @@ class Runner(Protocol):
 
 HARNESS_ROLES = frozenset({"plan", "work"})
 
-DEFAULT_LAYOUTS_FILE = "~/.supacode/layouts.json"
+SUPACODE_DEFAULTS_DOMAIN = "app.supabit.supacode"
+LAYOUTS_DEFAULTS_KEY = "layoutsFile"
 
 
 @dataclass(frozen=True)
@@ -55,7 +59,12 @@ class HarnessTabResult:
 
 @dataclass(frozen=True)
 class SavedLayout:
-    tab_ids: frozenset[str]
+    contents: Mapping[str, str]
+    """Saved tab id -> saved content id (the zmx session is supa-<content id lower>)."""
+
+    @property
+    def tab_ids(self) -> frozenset[str]:
+        return frozenset(self.contents)
 
 
 @dataclass(frozen=True)
@@ -67,7 +76,6 @@ class BenchRequest:
     companion_title: str | None = None
     companion_command: str | None = None
     pin: bool = False
-    layouts_file: str | None = None
 
 
 @dataclass(frozen=True)
@@ -127,7 +135,7 @@ def normalized_path(path: str) -> str:
 
 
 def layouts_key(path: str) -> str:
-    """Return Supacode's layouts.json key for a local worktree path."""
+    """Return Supacode's saved-layouts key for a local worktree path."""
     return normalized_path(path).rstrip(os.sep) + os.sep
 
 
@@ -136,35 +144,79 @@ def worktree_id(path: str) -> str:
     return quote(layouts_key(path), safe="")
 
 
-def load_saved_layout(path: str, layouts_file: str) -> SavedLayout | None:
-    """Load saved Supacode tab ids for a worktree path without mutating layouts."""
-    expanded_layouts_file = os.path.abspath(os.path.expanduser(layouts_file))
+def defaults_data(xml_text: str, key: str) -> bytes | None:
+    """Return a top-level <data> value from `defaults export` XML.
+
+    plistlib cannot parse Supacode's domain (it stores a year-0 date), so walk
+    the XML directly: the root <plist> holds one <dict> of alternating
+    <key> and value elements.
+    """
     try:
-        with open(expanded_layouts_file, encoding="utf-8") as file:
-            layouts = json.load(file)
-    except FileNotFoundError:
+        root = ElementTree.fromstring(xml_text)
+    except ElementTree.ParseError:
         return None
-    except json.JSONDecodeError:
+    top = root.find("dict")
+    if top is None:
         return None
-    except OSError as error:
-        raise SetupError(f"Could not read Supacode layouts: {error}") from error
+    children = list(top)
+    for index in range(0, len(children) - 1, 2):
+        key_element, value = children[index], children[index + 1]
+        if key_element.tag == "key" and key_element.text == key:
+            if value.tag != "data":
+                return None
+            text = "".join((value.text or "").split())
+            try:
+                return base64.b64decode(text, validate=True)
+            except (binascii.Error, ValueError):
+                return None
+    return None
+
+
+def load_saved_layout(path: str, *, run: Runner) -> SavedLayout | None:
+    """Load saved Supacode tab and content ids for a worktree path, read-only."""
+    data = defaults_data(
+        run(("defaults", "export", SUPACODE_DEFAULTS_DOMAIN, "-")),
+        LAYOUTS_DEFAULTS_KEY,
+    )
+    if data is None:
+        return None
+    try:
+        layouts = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
 
     if not isinstance(layouts, dict):
         return None
-    entry = layouts.get(layouts_key(path))
+    worktrees = layouts.get("worktrees")
+    if not isinstance(worktrees, dict):
+        return None
+    entry = worktrees.get(layouts_key(path))
     if not isinstance(entry, dict):
         return None
-    tabs = entry.get("tabs")
-    if not isinstance(tabs, list):
+    layout = entry.get("layout")
+    if not isinstance(layout, dict):
         return None
-    tab_ids = frozenset(
-        tab["id"]
-        for tab in tabs
-        if isinstance(tab, dict) and isinstance(tab.get("id"), str) and tab["id"]
-    )
-    if not tab_ids:
+    panes = layout.get("panes")
+    if not isinstance(panes, list):
         return None
-    return SavedLayout(tab_ids)
+    contents: dict[str, str] = {}
+    for pane in panes:
+        if not isinstance(pane, dict):
+            return None
+        tabs = pane.get("tabs")
+        if not isinstance(tabs, list):
+            return None
+        for tab in tabs:
+            if not isinstance(tab, dict):
+                continue
+            tab_id = tab.get("id")
+            content = tab.get("content")
+            content_id = content.get("id") if isinstance(content, dict) else None
+            if isinstance(tab_id, str) and tab_id and isinstance(content_id, str) and content_id:
+                contents[tab_id] = content_id
+    if not contents:
+        return None
+    return SavedLayout(contents)
 
 
 def output_lines(output: str) -> list[str]:
@@ -316,13 +368,9 @@ def close_restored_tabs(
     if not restored_tabs:
         return fresh_tab, ()
 
-    restored_sessions: list[tuple[str, str]] = []
-    for tab in restored_tabs:
-        surface = exactly_one(
-            output_lines(run(("supacode", "surface", "list", "-w", worktree, "-t", tab))),
-            f"surface in restored tab {tab}",
-        )
-        restored_sessions.append((tab, f"supa-{surface.lower()}"))
+    restored_sessions = [
+        (tab, f"supa-{saved.contents[tab].lower()}") for tab in restored_tabs
+    ]
 
     sessions = parse_zmx_sessions(run(("zmx", "list")))
     shell_pids: list[tuple[str, int]] = []
@@ -367,10 +415,7 @@ def setup_bench(
     existing = output_lines(run(("supacode", "worktree", "list")))
     if worktree in existing:
         raise SetupError(f"Bench worktree is already registered: {worktree}")
-    saved_layout = load_saved_layout(
-        bench_path,
-        request.layouts_file or DEFAULT_LAYOUTS_FILE,
-    )
+    saved_layout = load_saved_layout(bench_path, run=run)
 
     run(("supacode", "repo", "open", bench_path))
     wait_for_worktree(
@@ -591,7 +636,6 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
     parser.add_argument("--companion-title")
     parser.add_argument("--companion-command")
     parser.add_argument("--harness-tabs-json")
-    parser.add_argument("--layouts-file")
     parser.add_argument("--pin", action="store_true")
     parser.add_argument("harness", nargs=argparse.REMAINDER)
     parsed = parser.parse_args(list(arguments))
@@ -619,7 +663,6 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
         companion_title=parsed.companion_title,
         companion_command=parsed.companion_command,
         pin=parsed.pin,
-        layouts_file=parsed.layouts_file,
     )
 
 
