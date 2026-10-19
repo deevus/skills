@@ -22,8 +22,9 @@ SPEC.loader.exec_module(SETUP_BENCH)
 BENCH_PATH = "/tmp/example bench"
 WORKTREE = "%2Ftmp%2Fexample%20bench%2F"
 WORK_TAB = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
-WORK_SURFACE = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
-WORK_SESSION = "supa-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+WORK_SESSION = "supa-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+PANE = "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"
+OTHER_PANE = "99999999-9999-9999-9999-999999999999"
 WORK_ROOT_PID = 1234
 WORK_SHELL_PID = 1235
 COMPANION_TITLE = "Review"
@@ -34,11 +35,9 @@ COMPANION_SHELL_PID = 5679
 HARNESS = ("claude", "--permission-mode", "plan", "Read /tmp/brief.md")
 COMPANION_COMMAND = "companion-tool --mode observe --label opaque-pass-through"
 PLAN_TAB = WORK_TAB
-PLAN_SURFACE = WORK_SURFACE
 PLAN_SESSION = WORK_SESSION
 WORK2_TAB = "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD"
-WORK2_SURFACE = "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE"
-WORK2_SESSION = "supa-eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+WORK2_SESSION = "supa-dddddddd-dddd-dddd-dddd-dddddddddddd"
 WORK2_ROOT_PID = 9012
 WORK2_SHELL_PID = 9013
 PLAN_HARNESS = ("claude", "--permission-mode", "plan", "Plan")
@@ -156,11 +155,7 @@ def happy_runner(
         f"{WORK_TAB}\n",
         final_tabs,
     )
-    runner.add(
-        ("supacode", "surface", "list", "-w", WORKTREE, "-t", WORK_TAB),
-        f"{WORK_SURFACE}\n",
-        f"{WORK_SURFACE}\n",
-    )
+    runner.add(("supacode", "pane", "list", "-w", WORKTREE), f"{PANE}\n", f"{PANE}\n")
     runner.add(("zmx", "list", "--short"), f"other\n{WORK_SESSION}\n")
     first = harness_tabs[0]
     runner.add(
@@ -177,15 +172,12 @@ def happy_runner(
                 "new",
                 "-w",
                 WORKTREE,
+                "--pane",
+                PANE,
                 "--title",
                 second.title,
             ),
             f"{WORK2_TAB}\n",
-        )
-        runner.add(
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", WORK2_TAB),
-            f"{WORK2_SURFACE}\n",
-            f"{WORK2_SURFACE}\n",
         )
         runner.add(("zmx", "list", "--short"), f"other\n{WORK_SESSION}\n{WORK2_SESSION}\n")
         runner.add(("zmx", "run", WORK2_SESSION, "-d", *second.argv), "command sent!\n")
@@ -197,15 +189,13 @@ def happy_runner(
                 "new",
                 "-w",
                 WORKTREE,
+                "--pane",
+                PANE,
                 "--title",
                 companion_title,
                 "-i",
                 companion_command,
             ),
-            f"{COMPANION_TAB}\n",
-        )
-        runner.add(
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", COMPANION_TAB),
             f"{COMPANION_TAB}\n",
         )
     zmx_details = (
@@ -312,8 +302,8 @@ class SetupBenchTests(unittest.TestCase):
             result.as_dict(),
             {
                 "worktree": WORKTREE,
+                "pane": PANE,
                 "work_tab": WORK_TAB,
-                "work_surface": WORK_SURFACE,
                 "work_session": WORK_SESSION,
                 "work_shell_pid": WORK_SHELL_PID,
                 "harness_tabs": [
@@ -321,13 +311,11 @@ class SetupBenchTests(unittest.TestCase):
                         "role": "work",
                         "title": "Work",
                         "tab": WORK_TAB,
-                        "surface": WORK_SURFACE,
                         "session": WORK_SESSION,
                         "shell_pid": WORK_SHELL_PID,
                     }
                 ],
                 "companion_tab": None,
-                "companion_surface": None,
                 "companion_session": None,
                 "companion_shell_pid": None,
                 "pinned": False,
@@ -359,7 +347,7 @@ class SetupBenchTests(unittest.TestCase):
         )
         self.assertIn(("zmx", "run", PLAN_SESSION, "-d", *PLAN_HARNESS), runner.commands)
         self.assertIn(
-            ("supacode", "tab", "new", "-w", WORKTREE, "--title", "Work"),
+            ("supacode", "tab", "new", "-w", WORKTREE, "--pane", PANE, "--title", "Work"),
             runner.commands,
         )
         self.assertIn(("zmx", "run", WORK2_SESSION, "-d", *WORK_HARNESS), runner.commands)
@@ -370,7 +358,6 @@ class SetupBenchTests(unittest.TestCase):
                     "role": "plan",
                     "title": "Plan",
                     "tab": PLAN_TAB,
-                    "surface": PLAN_SURFACE,
                     "session": PLAN_SESSION,
                     "shell_pid": WORK_SHELL_PID,
                 },
@@ -378,7 +365,6 @@ class SetupBenchTests(unittest.TestCase):
                     "role": "work",
                     "title": "Work",
                     "tab": WORK2_TAB,
-                    "surface": WORK2_SURFACE,
                     "session": WORK2_SESSION,
                     "shell_pid": WORK2_SHELL_PID,
                 },
@@ -429,7 +415,7 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(result.work_tab, WORK_TAB)
         self.assertEqual(result.companion_tab, COMPANION_TAB)
-        self.assertEqual(result.companion_surface, COMPANION_TAB)
+        self.assertEqual(result.pane, PANE)
         self.assertEqual(result.companion_session, COMPANION_SESSION)
         self.assertEqual(result.companion_shell_pid, COMPANION_SHELL_PID)
         self.assertIn(
@@ -439,6 +425,8 @@ class SetupBenchTests(unittest.TestCase):
                 "new",
                 "-w",
                 WORKTREE,
+                "--pane",
+                PANE,
                 "--title",
                 COMPANION_TITLE,
                 "-i",
@@ -727,7 +715,7 @@ class SetupBenchTests(unittest.TestCase):
             ),
         )
         runner.responses[("supacode", "surface", "list", "-w", WORKTREE, "-t", OLD2_TAB)][0] = (
-            f"{OLD2_SURFACE}\n{WORK_SURFACE}\n"
+            f"{OLD2_SURFACE}\n{OLD_SURFACE}\n"
         )
 
         with self.assertRaisesRegex(SETUP_BENCH.SetupError, "surface in restored tab"):
@@ -758,7 +746,7 @@ class SetupBenchTests(unittest.TestCase):
                         {"id": OLD_TAB, "surfaceID": OLD_SURFACE},
                         {"id": None, "surfaceID": OLD2_SURFACE},
                         "not a dict",
-                        {"surfaceID": WORK_SURFACE},
+                        {"surfaceID": OLD_SURFACE},
                         {"id": OLD2_TAB},
                     ]
                 },
@@ -782,23 +770,7 @@ class SetupBenchTests(unittest.TestCase):
         self.assertEqual(quote(SETUP_BENCH.layouts_key(BENCH_PATH), safe=""), WORKTREE)
         self.assertEqual(SETUP_BENCH.worktree_id(BENCH_PATH), WORKTREE)
 
-    def test_refuses_unexpected_initial_surface_layout(self) -> None:
-        runner = happy_runner()
-        runner.responses[
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", WORK_TAB)
-        ][0] = f"{WORK_SURFACE}\n{COMPANION_TAB}\n"
 
-        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "exactly one default surface"):
-            SETUP_BENCH.setup_bench(request(), run=runner)
-
-    def test_refuses_a_nondefault_surface_id(self) -> None:
-        runner = happy_runner()
-        runner.responses[
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", WORK_TAB)
-        ][0] = f"{WORK_TAB}\n"
-
-        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "distinct id"):
-            SETUP_BENCH.setup_bench(request(), run=runner)
 
     def test_refuses_missing_zmx_session_before_renaming(self) -> None:
         runner = happy_runner()
@@ -863,17 +835,6 @@ class SetupBenchTests(unittest.TestCase):
             ("supacode", "tab", "focus", "-w", WORKTREE, "-t", WORK_TAB),
         )
 
-    def test_rejects_a_companion_surface_mismatch(self) -> None:
-        runner = happy_runner(
-            companion_title=COMPANION_TITLE,
-            companion_command=COMPANION_COMMAND,
-        )
-        runner.responses[
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", COMPANION_TAB)
-        ][0] = f"{WORK_SURFACE}\n"
-
-        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "Companion surface"):
-            SETUP_BENCH.setup_bench(companion_request(), run=runner)
 
     def test_accepts_zmx_cwd_session_details(self) -> None:
         runner = happy_runner()
@@ -909,8 +870,8 @@ class SetupBenchTests(unittest.TestCase):
     def test_bench_result_as_dict_preserves_nullable_companion_fields(self) -> None:
         result = SETUP_BENCH.BenchResult(
             worktree=WORKTREE,
+            pane=PANE,
             work_tab=WORK_TAB,
-            work_surface=WORK_SURFACE,
             work_session=WORK_SESSION,
             work_shell_pid=WORK_SHELL_PID,
             harness_tabs=(
@@ -918,13 +879,11 @@ class SetupBenchTests(unittest.TestCase):
                     role="work",
                     title="Work",
                     tab=WORK_TAB,
-                    surface=WORK_SURFACE,
                     session=WORK_SESSION,
                     shell_pid=WORK_SHELL_PID,
                 ),
             ),
             companion_tab=None,
-            companion_surface=None,
             companion_session=None,
             companion_shell_pid=None,
             pinned=False,
@@ -1106,6 +1065,104 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(json.loads(output)["closed_restored_tabs"], [])
         runner.assert_consumed()
+
+    def test_issue_12_default_tab_id_is_the_session_id(self) -> None:
+        runner = happy_runner()
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        session = f"supa-{WORK_TAB.lower()}"
+        self.assertEqual(result.work_session, session)
+        self.assertIn(("zmx", "run", session, "-d", *HARNESS), runner.commands)
+        runner.assert_consumed()
+
+    def test_extra_tabs_are_created_in_the_pane(self) -> None:
+        harness_tabs = (
+            harness_tab("plan", "Plan", PLAN_HARNESS),
+            harness_tab("work", "Work", WORK_HARNESS),
+        )
+        runner = happy_runner(
+            companion_title=COMPANION_TITLE,
+            companion_command=COMPANION_COMMAND,
+            harness_tabs=harness_tabs,
+        )
+
+        SETUP_BENCH.setup_bench(
+            request(
+                companion_title=COMPANION_TITLE,
+                companion_command=COMPANION_COMMAND,
+                harness_tabs=harness_tabs,
+            ),
+            run=runner,
+        )
+
+        new_commands = [c for c in runner.commands if c[:3] == ("supacode", "tab", "new")]
+        self.assertEqual(len(new_commands), 2)
+        for command in new_commands:
+            self.assertEqual(command[3:7], ("-w", WORKTREE, "--pane", PANE))
+        runner.assert_consumed()
+
+    def test_refuses_two_initial_panes_before_renaming(self) -> None:
+        runner = happy_runner()
+        runner.responses[("supacode", "pane", "list", "-w", WORKTREE)][0] = (
+            f"{PANE}\n{OTHER_PANE}\n"
+        )
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "exactly one pane"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
+
+    def test_refuses_when_final_panes_differ(self) -> None:
+        runner = happy_runner()
+        runner.responses[("supacode", "pane", "list", "-w", WORKTREE)][1] = (
+            f"{PANE}\n{OTHER_PANE}\n"
+        )
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "Unexpected final panes"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertNotEqual(runner.commands[-1][:3], ("supacode", "tab", "focus"))
+
+    def test_as_dict_has_pane_and_no_surface_keys(self) -> None:
+        runner = happy_runner(
+            companion_title=COMPANION_TITLE,
+            companion_command=COMPANION_COMMAND,
+        )
+
+        data = SETUP_BENCH.setup_bench(companion_request(), run=runner).as_dict()
+
+        self.assertEqual(data["pane"], PANE)
+        self.assertEqual(list(data)[:2], ["worktree", "pane"])
+        keys = set(data)
+        for tab in data["harness_tabs"]:
+            keys.update(tab)
+        self.assertFalse([key for key in keys if "surface" in key])
+
+    def test_happy_runs_never_use_surface_commands(self) -> None:
+        two = (
+            harness_tab("plan", "Plan", PLAN_HARNESS),
+            harness_tab("work", "Work", WORK_HARNESS),
+        )
+        cases = [
+            {},
+            {"harness_tabs": two},
+            {"companion_title": COMPANION_TITLE, "companion_command": COMPANION_COMMAND},
+            {
+                "companion_title": COMPANION_TITLE,
+                "companion_command": COMPANION_COMMAND,
+                "harness_tabs": two,
+                "pin": True,
+            },
+        ]
+        for kwargs in cases:
+            with self.subTest(kwargs=kwargs):
+                runner = happy_runner(**kwargs)
+                SETUP_BENCH.setup_bench(request(**kwargs), run=runner)
+                self.assertFalse(
+                    [c for c in runner.commands if c[:2] == ("supacode", "surface")]
+                )
+                runner.assert_consumed()
 
 
 if __name__ == "__main__":

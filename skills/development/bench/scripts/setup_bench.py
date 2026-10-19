@@ -40,7 +40,6 @@ class HarnessTabResult:
     role: str
     title: str
     tab: str
-    surface: str
     session: str
     shell_pid: int
 
@@ -49,7 +48,6 @@ class HarnessTabResult:
             "role": self.role,
             "title": self.title,
             "tab": self.tab,
-            "surface": self.surface,
             "session": self.session,
             "shell_pid": self.shell_pid,
         }
@@ -75,13 +73,12 @@ class BenchRequest:
 @dataclass(frozen=True)
 class BenchResult:
     worktree: str
+    pane: str
     work_tab: str
-    work_surface: str
     work_session: str
     work_shell_pid: int
     harness_tabs: tuple[HarnessTabResult, ...]
     companion_tab: str | None
-    companion_surface: str | None
     companion_session: str | None
     companion_shell_pid: int | None
     pinned: bool
@@ -95,13 +92,12 @@ class BenchResult:
     ]:
         return {
             "worktree": self.worktree,
+            "pane": self.pane,
             "work_tab": self.work_tab,
-            "work_surface": self.work_surface,
             "work_session": self.work_session,
             "work_shell_pid": self.work_shell_pid,
             "harness_tabs": [tab.as_dict() for tab in self.harness_tabs],
             "companion_tab": self.companion_tab,
-            "companion_surface": self.companion_surface,
             "companion_session": self.companion_session,
             "companion_shell_pid": self.companion_shell_pid,
             "pinned": self.pinned,
@@ -424,28 +420,14 @@ def setup_bench(
             bench_path,
             run=run,
         )
-    default_surface = exactly_one(
-        output_lines(
-            run(
-                (
-                    "supacode",
-                    "surface",
-                    "list",
-                    "-w",
-                    worktree,
-                    "-t",
-                    default_tab,
-                )
-            )
-        ),
-        "default surface",
+    pane = exactly_one(
+        output_lines(run(("supacode", "pane", "list", "-w", worktree))),
+        "pane",
     )
-    if default_surface == default_tab:
-        raise SetupError("Expected the default surface to have a distinct id")
 
     harness_results: list[HarnessTabResult] = []
     first = harness_tabs[0]
-    first_session = f"supa-{default_surface.lower()}"
+    first_session = f"supa-{default_tab.lower()}"
     require_short_session(first_session, run=run)
     run(
         (
@@ -466,7 +448,6 @@ def setup_bench(
             role=first.role,
             title=first.title,
             tab=default_tab,
-            surface=default_surface,
             session=first_session,
             shell_pid=0,
         )
@@ -475,17 +456,23 @@ def setup_bench(
     for tab in harness_tabs[1:]:
         tab_id = exactly_one(
             output_lines(
-                run(("supacode", "tab", "new", "-w", worktree, "--title", tab.title))
+                run(
+                    (
+                        "supacode",
+                        "tab",
+                        "new",
+                        "-w",
+                        worktree,
+                        "--pane",
+                        pane,
+                        "--title",
+                        tab.title,
+                    )
+                )
             ),
             f"{tab.role} tab id",
         )
-        surface = exactly_one(
-            output_lines(
-                run(("supacode", "surface", "list", "-w", worktree, "-t", tab_id))
-            ),
-            f"{tab.role} surface",
-        )
-        session = f"supa-{surface.lower()}"
+        session = f"supa-{tab_id.lower()}"
         require_short_session(session, run=run)
         run(("zmx", "run", session, "-d", *tab.argv))
         harness_results.append(
@@ -493,14 +480,12 @@ def setup_bench(
                 role=tab.role,
                 title=tab.title,
                 tab=tab_id,
-                surface=surface,
                 session=session,
                 shell_pid=0,
             )
         )
 
     companion_tab: str | None = None
-    companion_surface: str | None = None
     companion_session: str | None = None
     companion_shell_pid: int | None = None
     if request.companion_title is not None and request.companion_command is not None:
@@ -513,6 +498,8 @@ def setup_bench(
                         "new",
                         "-w",
                         worktree,
+                        "--pane",
+                        pane,
                         "--title",
                         request.companion_title,
                         "-i",
@@ -522,6 +509,7 @@ def setup_bench(
             ),
             "companion tab id",
         )
+        companion_session = f"supa-{companion_tab.lower()}"
 
     final_tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
     expected_tabs = {tab.tab for tab in harness_results}
@@ -530,47 +518,9 @@ def setup_bench(
     if len(final_tabs) != len(expected_tabs) or set(final_tabs) != expected_tabs:
         raise SetupError(f"Unexpected final tabs: {final_tabs!r}")
 
-    for index, result in enumerate(harness_results):
-        final_surface = exactly_one(
-            output_lines(
-                run(
-                    (
-                        "supacode",
-                        "surface",
-                        "list",
-                        "-w",
-                        worktree,
-                        "-t",
-                        result.tab,
-                    )
-                )
-            ),
-            f"final {result.title} surface",
-        )
-        if final_surface != result.surface:
-            raise SetupError(f"{result.title} surface changed during setup")
-        harness_results[index] = result
-
-    if companion_tab is not None:
-        companion_surface = exactly_one(
-            output_lines(
-                run(
-                    (
-                        "supacode",
-                        "surface",
-                        "list",
-                        "-w",
-                        worktree,
-                        "-t",
-                        companion_tab,
-                    )
-                )
-            ),
-            "final companion surface",
-        )
-        if companion_surface != companion_tab:
-            raise SetupError("Companion surface id does not match its tab id")
-        companion_session = f"supa-{companion_surface.lower()}"
+    panes = output_lines(run(("supacode", "pane", "list", "-w", worktree)))
+    if panes != [pane]:
+        raise SetupError(f"Unexpected final panes: {panes!r}")
 
     sessions = parse_zmx_sessions(run(("zmx", "list")))
     harness_results_with_pids: list[HarnessTabResult] = []
@@ -581,7 +531,6 @@ def setup_bench(
                 role=result.role,
                 title=result.title,
                 tab=result.tab,
-                surface=result.surface,
                 session=result.session,
                 shell_pid=shell_pid,
             )
@@ -595,13 +544,12 @@ def setup_bench(
     run(("supacode", "tab", "focus", "-w", worktree, "-t", work_result.tab))
     return BenchResult(
         worktree=worktree,
+        pane=pane,
         work_tab=work_result.tab,
-        work_surface=work_result.surface,
         work_session=work_result.session,
         work_shell_pid=work_result.shell_pid,
         harness_tabs=tuple(harness_results_with_pids),
         companion_tab=companion_tab,
-        companion_surface=companion_surface,
         companion_session=companion_session,
         companion_shell_pid=companion_shell_pid,
         pinned=request.pin,
