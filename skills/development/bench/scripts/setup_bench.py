@@ -305,6 +305,25 @@ def wait_for_worktree(
         sleep(poll_interval)
 
 
+def wait_for_tabs(
+    worktree: str,
+    *,
+    run: Runner,
+    sleep: Callable[[float], None],
+    monotonic: Callable[[], float],
+    timeout: float,
+    poll_interval: float,
+) -> list[str]:
+    deadline = monotonic() + timeout
+    while True:
+        tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
+        if tabs:
+            return tabs
+        if monotonic() >= deadline:
+            raise SetupError(f"Supacode worktree has no tabs: {worktree}")
+        sleep(poll_interval)
+
+
 def validate_harness_tabs(harness_tabs: Sequence[HarnessTab]) -> tuple[HarnessTab, ...]:
     if not harness_tabs:
         raise SetupError("At least one harness tab is required")
@@ -458,7 +477,14 @@ def setup_bench(
         )
     run(("supacode", "worktree", "focus", "-w", worktree))
 
-    tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
+    tabs = wait_for_tabs(
+        worktree,
+        run=run,
+        sleep=sleep,
+        monotonic=monotonic,
+        timeout=timeout,
+        poll_interval=poll_interval,
+    )
     if saved_layout is None:
         default_tab = exactly_one(tabs, "default tab")
         closed_restored_tabs: tuple[str, ...] = ()

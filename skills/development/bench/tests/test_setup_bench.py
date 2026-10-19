@@ -559,6 +559,39 @@ class SetupBenchTests(unittest.TestCase):
         with self.assertRaisesRegex(SETUP_BENCH.SetupError, "did not appear"):
             SETUP_BENCH.setup_bench(request(), run=runner, timeout=0)
 
+    def test_waits_for_default_tab_after_focus(self) -> None:
+        runner = happy_runner()
+        runner.responses[("supacode", "tab", "list", "-w", WORKTREE)].appendleft("")
+        sleeps: list[float] = []
+
+        result = SETUP_BENCH.setup_bench(
+            request(), run=runner, sleep=sleeps.append, poll_interval=0.5
+        )
+
+        self.assertEqual(result.work_tab, WORK_TAB)
+        self.assertEqual(sleeps, [0.5])
+        runner.assert_consumed()
+
+    def test_reports_timeout_when_default_tab_never_appears(self) -> None:
+        runner = happy_runner()
+        tab_list = ("supacode", "tab", "list", "-w", WORKTREE)
+        runner.responses[tab_list] = deque(["", "", ""])
+        clock = iter(float(tick) for tick in range(100))
+        sleeps: list[float] = []
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "has no tabs"):
+            SETUP_BENCH.setup_bench(
+                request(),
+                run=runner,
+                sleep=sleeps.append,
+                monotonic=lambda: next(clock),
+                timeout=1.0,
+                poll_interval=1.0,
+            )
+
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
+        self.assertFalse(any(command[:2] == ("zmx", "run") for command in runner.commands))
+
     def test_refuses_unexpected_initial_tab_count_before_renaming(self) -> None:
         runner = happy_runner()
         runner.responses[("supacode", "tab", "list", "-w", WORKTREE)][0] = (

@@ -106,11 +106,12 @@ Use the task record for the short title and the project's established colour
 convention from its project topic. Do not invent a generic project-specific
 rule.
 
-The sidecar owns worktree polling, pre-existing-worktree refusal, optional
-pinning, stale-layout tab cleanup, explicit Supacode targets, default-tab and
-pane checks, `zmx` session discovery, harness launch, optional companion
-creation, structural verification, and final Work focus. New tabs go into the
-bench's single pane. Do not reproduce those mechanics in the calling shell.
+The sidecar owns worktree and default-tab polling, pre-existing-worktree
+refusal, optional pinning, stale-layout tab cleanup, explicit Supacode targets,
+default-tab and pane checks, `zmx` session discovery, harness launch, optional
+companion creation, structural verification, and final Work focus. New tabs go
+into the bench's single pane. Do not reproduce those mechanics in the calling
+shell.
 
 A successful call prints one JSON object with these fields:
 
