@@ -113,48 +113,15 @@ companion creation, structural verification, and final Work focus. New tabs go
 into the bench's single pane. Do not reproduce those mechanics in the calling
 shell.
 
-A successful call prints one JSON object with these fields:
+A successful call prints one JSON object. Use these fields:
 
-```json
-{
-  "worktree": "...",
-  "pane": "...",
-  "work_tab": "...",
-  "work_session": "...",
-  "work_shell_pid": 123,
-  "harness_tabs": [
-    {
-      "role": "plan",
-      "title": "Plan",
-      "tab": "...",
-      "session": "...",
-      "shell_pid": 122
-    },
-    {
-      "role": "work",
-      "title": "Work",
-      "tab": "...",
-      "session": "...",
-      "shell_pid": 123
-    }
-  ],
-  "companion_tab": null,
-  "companion_session": null,
-  "companion_shell_pid": null,
-  "pinned": false,
-  "closed_restored_tabs": []
-}
-```
+- `harness_tabs[].shell_pid` and `companion_shell_pid`: verify each shell's cwd
+  as described below. `companion_shell_pid` is null when there is no companion.
+- `closed_restored_tabs`: report any stale restored tab ids that setup closed in
+  the bench result summary.
 
-The legacy `work_*` fields always describe the Work harness tab. The
-`harness_tabs` array describes every first-class harness tab.
-`closed_restored_tabs` lists any stale restored tab ids that setup closed;
-report those ids in the bench result summary.
-
-When a companion is requested, all `companion_*` fields must be non-null. When
-no companion is requested, all `companion_*` fields must be null. A non-zero
-exit means setup is incomplete. Report the error and inspect the existing state
-instead of guessing or retrying mutations.
+A non-zero exit means setup is incomplete. Report the error and inspect the
+existing state instead of guessing or retrying mutations.
 
 ## Reused bench paths
 
