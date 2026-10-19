@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import os
@@ -22,8 +23,9 @@ SPEC.loader.exec_module(SETUP_BENCH)
 BENCH_PATH = "/tmp/example bench"
 WORKTREE = "%2Ftmp%2Fexample%20bench%2F"
 WORK_TAB = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
-WORK_SURFACE = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
-WORK_SESSION = "supa-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+WORK_SESSION = "supa-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+PANE = "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"
+OTHER_PANE = "99999999-9999-9999-9999-999999999999"
 WORK_ROOT_PID = 1234
 WORK_SHELL_PID = 1235
 COMPANION_TITLE = "Review"
@@ -34,26 +36,26 @@ COMPANION_SHELL_PID = 5679
 HARNESS = ("claude", "--permission-mode", "plan", "Read /tmp/brief.md")
 COMPANION_COMMAND = "companion-tool --mode observe --label opaque-pass-through"
 PLAN_TAB = WORK_TAB
-PLAN_SURFACE = WORK_SURFACE
 PLAN_SESSION = WORK_SESSION
 WORK2_TAB = "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD"
-WORK2_SURFACE = "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE"
-WORK2_SESSION = "supa-eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+WORK2_SESSION = "supa-dddddddd-dddd-dddd-dddd-dddddddddddd"
 WORK2_ROOT_PID = 9012
 WORK2_SHELL_PID = 9013
 PLAN_HARNESS = ("claude", "--permission-mode", "plan", "Plan")
 WORK_HARNESS = ("pi", "--model", "openai-codex/gpt-5.6-astra")
 OLD_TAB = "11111111-1111-1111-1111-111111111111"
-OLD_SURFACE = "22222222-2222-2222-2222-222222222222"
+OLD_CONTENT = "22222222-2222-2222-2222-222222222222"
 OLD_SESSION = "supa-22222222-2222-2222-2222-222222222222"
 OLD_ROOT_PID = 2234
 OLD_SHELL_PID = 2235
 OLD2_TAB = "33333333-3333-3333-3333-333333333333"
-OLD2_SURFACE = "44444444-4444-4444-4444-444444444444"
+OLD2_CONTENT = "44444444-4444-4444-4444-444444444444"
 OLD2_SESSION = "supa-44444444-4444-4444-4444-444444444444"
 OLD2_ROOT_PID = 4434
 OLD2_SHELL_PID = 4435
 LAYOUTS_KEY = BENCH_PATH + "/"
+DEFAULTS_EXPORT = ("defaults", "export", "app.supabit.supacode", "-")
+EMPTY_DEFAULTS = '<plist version="1.0"><dict/></plist>'
 
 
 class FakeRunner:
@@ -91,7 +93,6 @@ def request(
     companion_command: str | None = None,
     pin: bool = False,
     harness_tabs: tuple[object, ...] | None = None,
-    layouts_file: str | None = None,
 ):
     return SETUP_BENCH.BenchRequest(
         path=BENCH_PATH,
@@ -101,7 +102,6 @@ def request(
         companion_command=companion_command,
         harness_tabs=harness_tabs or (harness_tab("work", "Work", HARNESS),),
         pin=pin,
-        layouts_file=layouts_file,
     )
 
 
@@ -124,6 +124,7 @@ def happy_runner(
     has_companion = companion_title is not None and companion_command is not None
     runner = FakeRunner()
     runner.add(("supacode", "worktree", "list"), "", f"{WORKTREE}\n")
+    runner.add(DEFAULTS_EXPORT, EMPTY_DEFAULTS)
     runner.add(("supacode", "repo", "open", BENCH_PATH), "")
     runner.add(
         (
@@ -156,11 +157,7 @@ def happy_runner(
         f"{WORK_TAB}\n",
         final_tabs,
     )
-    runner.add(
-        ("supacode", "surface", "list", "-w", WORKTREE, "-t", WORK_TAB),
-        f"{WORK_SURFACE}\n",
-        f"{WORK_SURFACE}\n",
-    )
+    runner.add(("supacode", "pane", "list", "-w", WORKTREE), f"{PANE}\n", f"{PANE}\n")
     runner.add(("zmx", "list", "--short"), f"other\n{WORK_SESSION}\n")
     first = harness_tabs[0]
     runner.add(
@@ -177,15 +174,12 @@ def happy_runner(
                 "new",
                 "-w",
                 WORKTREE,
+                "--pane",
+                PANE,
                 "--title",
                 second.title,
             ),
             f"{WORK2_TAB}\n",
-        )
-        runner.add(
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", WORK2_TAB),
-            f"{WORK2_SURFACE}\n",
-            f"{WORK2_SURFACE}\n",
         )
         runner.add(("zmx", "list", "--short"), f"other\n{WORK_SESSION}\n{WORK2_SESSION}\n")
         runner.add(("zmx", "run", WORK2_SESSION, "-d", *second.argv), "command sent!\n")
@@ -197,15 +191,13 @@ def happy_runner(
                 "new",
                 "-w",
                 WORKTREE,
+                "--pane",
+                PANE,
                 "--title",
                 companion_title,
                 "-i",
                 companion_command,
             ),
-            f"{COMPANION_TAB}\n",
-        )
-        runner.add(
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", COMPANION_TAB),
             f"{COMPANION_TAB}\n",
         )
     zmx_details = (
@@ -246,19 +238,53 @@ def happy_runner(
     return runner
 
 
-def layout_entry(*tabs: tuple[str, str | None]) -> dict[str, object]:
-    return {"tabs": [{"id": tab, "surfaceID": surface} for tab, surface in tabs]}
+def layout_entry(*panes: tuple[tuple[str, str], ...]) -> dict[str, object]:
+    """Build a v2 saved worktree entry: one tuple of (tab id, content id) per pane."""
+    return {
+        "layout": {
+            "focusedPaneID": PANE,
+            "panes": [
+                {
+                    "id": f"{index:08d}-0000-0000-0000-000000000000",
+                    "selectedTabID": tabs[0][0],
+                    "tabs": [
+                        {"id": tab, "title": "zsh", "content": {"id": content, "state": {}}}
+                        for tab, content in tabs
+                    ],
+                }
+                for index, tabs in enumerate(panes)
+            ],
+            "tree": {},
+        },
+        "origin": {},
+    }
 
 
-def write_layouts(home: str, value: dict[str, object] | str) -> str:
-    layouts_dir = pathlib.Path(home) / ".supacode"
-    layouts_dir.mkdir(parents=True, exist_ok=True)
-    layouts_file = layouts_dir / "layouts.json"
-    if isinstance(value, str):
-        layouts_file.write_text(value)
-    else:
-        layouts_file.write_text(json.dumps(value))
-    return str(layouts_file)
+def layouts_payload(worktrees: object) -> bytes:
+    return json.dumps({"schemaVersion": 2, "worktrees": worktrees}).encode("utf-8")
+
+
+def defaults_xml_data(data: str | None) -> str:
+    """Build `defaults export` XML with an unrelated year-0 date and optional layoutsFile data."""
+    layouts = "" if data is None else f"\t<key>layoutsFile</key>\n\t<data>{data}</data>\n"
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        "\t<key>other</key>\n\t<date>0000-12-30T00:00:00Z</date>\n"
+        f"{layouts}"
+        "</dict>\n</plist>\n"
+    )
+
+
+def defaults_xml(worktrees: object, *, raw: object | None = None) -> str:
+    payload = layouts_payload(worktrees) if raw is None else json.dumps(raw).encode("utf-8")
+    return defaults_xml_data(base64.b64encode(payload).decode("ascii"))
+
+
+def set_layouts(runner: FakeRunner, worktrees: object) -> None:
+    runner.responses[DEFAULTS_EXPORT][0] = defaults_xml(worktrees)
 
 
 def ps_output(*pairs: tuple[int, int]) -> str:
@@ -270,16 +296,19 @@ def restored_runner(
     restored: tuple[tuple[str, str, str, int, int], ...],
     *,
     fresh_first: bool = False,
+    panes: tuple[tuple[tuple[str, str], ...], ...] | None = None,
 ) -> FakeRunner:
+    if panes is None:
+        panes = (tuple((tab, content) for tab, content, _s, _r, _p in restored),)
+    set_layouts(runner, {LAYOUTS_KEY: layout_entry(*panes)})
     tab_list = runner.responses[("supacode", "tab", "list", "-w", WORKTREE)]
-    restored_tabs = [tab for tab, _surface, _session, _root_pid, _shell_pid in restored]
+    restored_tabs = [tab for tab, _content, _session, _root_pid, _shell_pid in restored]
     initial_tabs = [WORK_TAB, *restored_tabs] if fresh_first else [*restored_tabs, WORK_TAB]
     tab_list[0] = "".join(f"{tab}\n" for tab in initial_tabs)
     tab_list.insert(1, f"{WORK_TAB}\n")
 
     restored_details = ""
-    for tab, surface, session, root_pid, shell_pid in restored:
-        runner.add(("supacode", "surface", "list", "-w", WORKTREE, "-t", tab), f"{surface}\n")
+    for tab, _content, session, root_pid, shell_pid in restored:
         runner.add(("pgrep", "-P", str(root_pid)), f"{shell_pid}\n")
         runner.add(
             ("lsof", "-a", "-d", "cwd", "-p", str(shell_pid), "-Fn"),
@@ -312,8 +341,8 @@ class SetupBenchTests(unittest.TestCase):
             result.as_dict(),
             {
                 "worktree": WORKTREE,
+                "pane": PANE,
                 "work_tab": WORK_TAB,
-                "work_surface": WORK_SURFACE,
                 "work_session": WORK_SESSION,
                 "work_shell_pid": WORK_SHELL_PID,
                 "harness_tabs": [
@@ -321,13 +350,11 @@ class SetupBenchTests(unittest.TestCase):
                         "role": "work",
                         "title": "Work",
                         "tab": WORK_TAB,
-                        "surface": WORK_SURFACE,
                         "session": WORK_SESSION,
                         "shell_pid": WORK_SHELL_PID,
                     }
                 ],
                 "companion_tab": None,
-                "companion_surface": None,
                 "companion_session": None,
                 "companion_shell_pid": None,
                 "pinned": False,
@@ -359,7 +386,7 @@ class SetupBenchTests(unittest.TestCase):
         )
         self.assertIn(("zmx", "run", PLAN_SESSION, "-d", *PLAN_HARNESS), runner.commands)
         self.assertIn(
-            ("supacode", "tab", "new", "-w", WORKTREE, "--title", "Work"),
+            ("supacode", "tab", "new", "-w", WORKTREE, "--pane", PANE, "--title", "Work"),
             runner.commands,
         )
         self.assertIn(("zmx", "run", WORK2_SESSION, "-d", *WORK_HARNESS), runner.commands)
@@ -370,7 +397,6 @@ class SetupBenchTests(unittest.TestCase):
                     "role": "plan",
                     "title": "Plan",
                     "tab": PLAN_TAB,
-                    "surface": PLAN_SURFACE,
                     "session": PLAN_SESSION,
                     "shell_pid": WORK_SHELL_PID,
                 },
@@ -378,7 +404,6 @@ class SetupBenchTests(unittest.TestCase):
                     "role": "work",
                     "title": "Work",
                     "tab": WORK2_TAB,
-                    "surface": WORK2_SURFACE,
                     "session": WORK2_SESSION,
                     "shell_pid": WORK2_SHELL_PID,
                 },
@@ -429,7 +454,7 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(result.work_tab, WORK_TAB)
         self.assertEqual(result.companion_tab, COMPANION_TAB)
-        self.assertEqual(result.companion_surface, COMPANION_TAB)
+        self.assertEqual(result.pane, PANE)
         self.assertEqual(result.companion_session, COMPANION_SESSION)
         self.assertEqual(result.companion_shell_pid, COMPANION_SHELL_PID)
         self.assertIn(
@@ -439,6 +464,8 @@ class SetupBenchTests(unittest.TestCase):
                 "new",
                 "-w",
                 WORKTREE,
+                "--pane",
+                PANE,
                 "--title",
                 COMPANION_TITLE,
                 "-i",
@@ -484,7 +511,6 @@ class SetupBenchTests(unittest.TestCase):
             companion_title=None,
             companion_command=None,
             harness_tabs=(harness_tab("work", "Work", HARNESS),),
-            layouts_file=str(pathlib.Path(self.home_dir.name) / ".supacode" / "layouts.json"),
         )
 
         with mock.patch.dict("os.environ", {"HOME": "/tmp"}):
@@ -527,10 +553,44 @@ class SetupBenchTests(unittest.TestCase):
     def test_reports_timeout_when_opened_worktree_never_appears(self) -> None:
         runner = FakeRunner()
         runner.add(("supacode", "worktree", "list"), "", "")
+        runner.add(DEFAULTS_EXPORT, EMPTY_DEFAULTS)
         runner.add(("supacode", "repo", "open", BENCH_PATH), "")
 
         with self.assertRaisesRegex(SETUP_BENCH.SetupError, "did not appear"):
             SETUP_BENCH.setup_bench(request(), run=runner, timeout=0)
+
+    def test_waits_for_default_tab_after_focus(self) -> None:
+        runner = happy_runner()
+        runner.responses[("supacode", "tab", "list", "-w", WORKTREE)].appendleft("")
+        sleeps: list[float] = []
+
+        result = SETUP_BENCH.setup_bench(
+            request(), run=runner, sleep=sleeps.append, poll_interval=0.5
+        )
+
+        self.assertEqual(result.work_tab, WORK_TAB)
+        self.assertEqual(sleeps, [0.5])
+        runner.assert_consumed()
+
+    def test_reports_timeout_when_default_tab_never_appears(self) -> None:
+        runner = happy_runner()
+        tab_list = ("supacode", "tab", "list", "-w", WORKTREE)
+        runner.responses[tab_list] = deque(["", "", ""])
+        clock = iter(float(tick) for tick in range(100))
+        sleeps: list[float] = []
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "has no tabs"):
+            SETUP_BENCH.setup_bench(
+                request(),
+                run=runner,
+                sleep=sleeps.append,
+                monotonic=lambda: next(clock),
+                timeout=1.0,
+                poll_interval=1.0,
+            )
+
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
+        self.assertFalse(any(command[:2] == ("zmx", "run") for command in runner.commands))
 
     def test_refuses_unexpected_initial_tab_count_before_renaming(self) -> None:
         runner = happy_runner()
@@ -543,17 +603,14 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
 
-
     def test_closes_idle_restored_tabs_and_reports_them(self) -> None:
-        write_layouts(
-            self.home_dir.name,
-            {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE), (OLD2_TAB, OLD2_SURFACE))},
+        runner = restored_runner(
+            happy_runner(),
+            (
+                (OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),
+                (OLD2_TAB, OLD2_CONTENT, OLD2_SESSION, OLD2_ROOT_PID, OLD2_SHELL_PID),
+            ),
         )
-        restored = (
-            (OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),
-            (OLD2_TAB, OLD2_SURFACE, OLD2_SESSION, OLD2_ROOT_PID, OLD2_SHELL_PID),
-        )
-        runner = restored_runner(happy_runner(), restored)
 
         result = SETUP_BENCH.setup_bench(request(), run=runner)
 
@@ -579,11 +636,39 @@ class SetupBenchTests(unittest.TestCase):
         )
         runner.assert_consumed()
 
-    def test_identifies_fresh_tab_by_id_not_position(self) -> None:
-        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
+    def test_restored_tab_session_comes_from_saved_content_id(self) -> None:
         runner = restored_runner(
             happy_runner(),
-            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+            ((OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+        )
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertNotEqual(OLD_TAB, OLD_CONTENT)
+        self.assertEqual(OLD_SESSION, f"supa-{OLD_CONTENT.lower()}")
+        self.assertEqual(result.closed_restored_tabs, (OLD_TAB,))
+        self.assertFalse([c for c in runner.commands if c[:2] == ("supacode", "surface")])
+        runner.assert_consumed()
+
+    def test_detects_restored_tabs_across_saved_panes(self) -> None:
+        runner = restored_runner(
+            happy_runner(),
+            (
+                (OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),
+                (OLD2_TAB, OLD2_CONTENT, OLD2_SESSION, OLD2_ROOT_PID, OLD2_SHELL_PID),
+            ),
+            panes=(((OLD_TAB, OLD_CONTENT),), ((OLD2_TAB, OLD2_CONTENT),)),
+        )
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertEqual(result.closed_restored_tabs, (OLD_TAB, OLD2_TAB))
+        runner.assert_consumed()
+
+    def test_identifies_fresh_tab_by_id_not_position(self) -> None:
+        runner = restored_runner(
+            happy_runner(),
+            ((OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
             fresh_first=True,
         )
 
@@ -594,8 +679,8 @@ class SetupBenchTests(unittest.TestCase):
         runner.assert_consumed()
 
     def test_saved_layout_present_but_nothing_restored_uses_default_path(self) -> None:
-        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
         runner = happy_runner()
+        set_layouts(runner, {LAYOUTS_KEY: layout_entry(((OLD_TAB, OLD_CONTENT),))})
 
         result = SETUP_BENCH.setup_bench(request(), run=runner)
 
@@ -604,8 +689,8 @@ class SetupBenchTests(unittest.TestCase):
         runner.assert_consumed()
 
     def test_ignores_saved_layouts_for_other_paths(self) -> None:
-        write_layouts(self.home_dir.name, {"/tmp/other bench/": layout_entry((OLD_TAB, OLD_SURFACE))})
         runner = happy_runner()
+        set_layouts(runner, {"/tmp/other bench/": layout_entry(((OLD_TAB, OLD_CONTENT),))})
 
         result = SETUP_BENCH.setup_bench(request(), run=runner)
 
@@ -613,29 +698,44 @@ class SetupBenchTests(unittest.TestCase):
         self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
         runner.assert_consumed()
 
-    def test_undecodable_layouts_file_is_treated_as_no_saved_layout(self) -> None:
-        write_layouts(self.home_dir.name, "not json")
+    def test_undecodable_layouts_are_treated_as_no_saved_layout(self) -> None:
         runner = happy_runner()
+        runner.responses[DEFAULTS_EXPORT][0] = "<plist><dict>"
 
         result = SETUP_BENCH.setup_bench(request(), run=runner)
 
         self.assertEqual(result.closed_restored_tabs, ())
         runner.assert_consumed()
 
-    def test_reads_saved_layout_before_opening_repo(self) -> None:
-        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
-        runner = restored_runner(
-            happy_runner(),
-            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
-        )
+    def test_failing_defaults_export_propagates(self) -> None:
+        runner = happy_runner()
 
         def run(command: Sequence[str]) -> str:
-            if tuple(command) == ("supacode", "repo", "open", BENCH_PATH):
-                write_layouts(self.home_dir.name, {})
+            if tuple(command) == DEFAULTS_EXPORT:
+                raise SETUP_BENCH.SetupError("defaults failed")
             return runner(command)
 
-        result = SETUP_BENCH.setup_bench(request(), run=run)
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "defaults failed"):
+            SETUP_BENCH.setup_bench(request(), run=run)
 
+        self.assertNotIn(("supacode", "repo", "open", BENCH_PATH), runner.commands)
+
+    def test_reads_saved_layout_before_opening_repo(self) -> None:
+        runner = restored_runner(
+            happy_runner(),
+            ((OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+        )
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertLess(
+            runner.commands.index(DEFAULTS_EXPORT),
+            runner.commands.index(("supacode", "repo", "open", BENCH_PATH)),
+        )
+        self.assertGreater(
+            runner.commands.index(DEFAULTS_EXPORT),
+            runner.commands.index(("supacode", "worktree", "list")),
+        )
         self.assertEqual(result.closed_restored_tabs, (OLD_TAB,))
         runner.assert_consumed()
 
@@ -646,8 +746,8 @@ class SetupBenchTests(unittest.TestCase):
         }
         for name, tabs in cases.items():
             with self.subTest(name=name):
-                write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
                 runner = happy_runner()
+                set_layouts(runner, {LAYOUTS_KEY: layout_entry(((OLD_TAB, OLD_CONTENT),))})
                 runner.responses[("supacode", "tab", "list", "-w", WORKTREE)][0] = tabs
 
                 with self.assertRaisesRegex(SETUP_BENCH.SetupError, "fresh default tab"):
@@ -656,26 +756,10 @@ class SetupBenchTests(unittest.TestCase):
                 self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
                 self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
 
-    def test_refuses_restored_tab_with_two_surfaces(self) -> None:
-        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
-        runner = restored_runner(
-            happy_runner(),
-            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
-        )
-        runner.responses[("supacode", "surface", "list", "-w", WORKTREE, "-t", OLD_TAB)][0] = (
-            f"{OLD_SURFACE}\n{OLD2_SURFACE}\n"
-        )
-
-        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "surface in restored tab"):
-            SETUP_BENCH.setup_bench(request(), run=runner)
-
-        self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
-
     def test_refuses_restored_tab_whose_shell_cwd_left_bench(self) -> None:
-        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
         runner = restored_runner(
             happy_runner(),
-            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+            ((OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
         )
         runner.responses[("lsof", "-a", "-d", "cwd", "-p", str(OLD_SHELL_PID), "-Fn")][0] = (
             f"p{OLD_SHELL_PID}\nfcwd\nn/tmp/wrong\n"
@@ -687,10 +771,9 @@ class SetupBenchTests(unittest.TestCase):
         self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
 
     def test_refuses_restored_tab_with_busy_shell(self) -> None:
-        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
         runner = restored_runner(
             happy_runner(),
-            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+            ((OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
         )
         runner.responses[("ps", "-axo", "pid=,ppid=")][0] = ps_output((9999, OLD_SHELL_PID))
 
@@ -700,10 +783,9 @@ class SetupBenchTests(unittest.TestCase):
         self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
 
     def test_refuses_restored_tab_with_multiple_clients(self) -> None:
-        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
         runner = restored_runner(
             happy_runner(),
-            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+            ((OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
         )
         runner.responses[("zmx", "list")][0] = (
             f"name={OLD_SESSION}\tpid={OLD_ROOT_PID}\tclients=2\tstart_dir={BENCH_PATH}\n"
@@ -715,31 +797,25 @@ class SetupBenchTests(unittest.TestCase):
         self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
 
     def test_checks_every_restored_tab_before_closing_any(self) -> None:
-        write_layouts(
-            self.home_dir.name,
-            {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE), (OLD2_TAB, OLD2_SURFACE))},
-        )
         runner = restored_runner(
             happy_runner(),
             (
-                (OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),
-                (OLD2_TAB, OLD2_SURFACE, OLD2_SESSION, OLD2_ROOT_PID, OLD2_SHELL_PID),
+                (OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),
+                (OLD2_TAB, OLD2_CONTENT, OLD2_SESSION, OLD2_ROOT_PID, OLD2_SHELL_PID),
             ),
         )
-        runner.responses[("supacode", "surface", "list", "-w", WORKTREE, "-t", OLD2_TAB)][0] = (
-            f"{OLD2_SURFACE}\n{WORK_SURFACE}\n"
-        )
+        runner.responses[("ps", "-axo", "pid=,ppid=")][0] = ps_output((9999, OLD2_SHELL_PID))
 
-        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "surface in restored tab"):
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "shell is busy"):
             SETUP_BENCH.setup_bench(request(), run=runner)
 
+        self.assertIn(("lsof", "-a", "-d", "cwd", "-p", str(OLD2_SHELL_PID), "-Fn"), runner.commands)
         self.assertFalse(any(command[:3] == ("supacode", "tab", "close") for command in runner.commands))
 
     def test_refuses_when_restored_tabs_remain_after_close(self) -> None:
-        write_layouts(self.home_dir.name, {LAYOUTS_KEY: layout_entry((OLD_TAB, OLD_SURFACE))})
         runner = restored_runner(
             happy_runner(),
-            ((OLD_TAB, OLD_SURFACE, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
+            ((OLD_TAB, OLD_CONTENT, OLD_SESSION, OLD_ROOT_PID, OLD_SHELL_PID),),
         )
         runner.responses[("supacode", "tab", "list", "-w", WORKTREE)][1] = f"{WORK_TAB}\n{OLD_TAB}\n"
 
@@ -749,56 +825,93 @@ class SetupBenchTests(unittest.TestCase):
         self.assertIn(("supacode", "tab", "close", "-w", WORKTREE, "-t", OLD_TAB), runner.commands)
         self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
 
-    def test_load_saved_layout_skips_invalid_tabs_and_handles_empty_inputs(self) -> None:
-        layouts_file = write_layouts(
-            self.home_dir.name,
-            {
-                LAYOUTS_KEY: {
-                    "tabs": [
-                        {"id": OLD_TAB, "surfaceID": OLD_SURFACE},
-                        {"id": None, "surfaceID": OLD2_SURFACE},
-                        "not a dict",
-                        {"surfaceID": WORK_SURFACE},
-                        {"id": OLD2_TAB},
-                    ]
-                },
-                "/tmp/empty/": {"tabs": [{"id": None}]},
-                "/tmp/non-list/": {"tabs": "not a list"},
-                "/tmp/not-dict/": [OLD_TAB],
-            },
+    def load(self, xml: str, path: str = BENCH_PATH):
+        runner = FakeRunner()
+        runner.add(DEFAULTS_EXPORT, xml)
+        saved = SETUP_BENCH.load_saved_layout(path, run=runner)
+        runner.assert_consumed()
+        return saved
+
+    def test_load_saved_layout_reads_content_ids_across_panes(self) -> None:
+        saved = self.load(
+            defaults_xml(
+                {
+                    LAYOUTS_KEY: layout_entry(
+                        ((OLD_TAB, OLD_CONTENT),),
+                        ((OLD2_TAB, OLD2_CONTENT),),
+                    )
+                }
+            )
         )
 
-        saved = SETUP_BENCH.load_saved_layout(BENCH_PATH, layouts_file)
-
+        self.assertEqual(saved.contents, {OLD_TAB: OLD_CONTENT, OLD2_TAB: OLD2_CONTENT})
         self.assertEqual(saved.tab_ids, frozenset({OLD_TAB, OLD2_TAB}))
-        self.assertIsNone(SETUP_BENCH.load_saved_layout("/tmp/empty", layouts_file))
-        self.assertIsNone(SETUP_BENCH.load_saved_layout("/tmp/non-list", layouts_file))
-        self.assertIsNone(SETUP_BENCH.load_saved_layout("/tmp/not-dict", layouts_file))
-        self.assertIsNone(SETUP_BENCH.load_saved_layout("/tmp/missing", layouts_file))
-        self.assertIsNone(SETUP_BENCH.load_saved_layout(BENCH_PATH, "/tmp/no-such-layouts.json"))
+
+    def test_load_saved_layout_decodes_base64_with_newlines(self) -> None:
+        payload = layouts_payload({LAYOUTS_KEY: layout_entry(((OLD_TAB, OLD_CONTENT),))})
+        encoded = base64.b64encode(payload).decode("ascii")
+        wrapped = "\n\t".join(encoded[i : i + 20] for i in range(0, len(encoded), 20))
+
+        saved = self.load(defaults_xml_data(f"\n\t{wrapped}\n\t"))
+
+        self.assertEqual(saved.contents, {OLD_TAB: OLD_CONTENT})
+
+    def test_load_saved_layout_skips_tabs_without_ids(self) -> None:
+        layout = {
+            "panes": [
+                {
+                    "id": PANE,
+                    "tabs": [
+                        {"id": OLD_TAB, "content": {"id": OLD_CONTENT}},
+                        {"id": OLD2_TAB},
+                        {"id": OLD2_TAB, "content": {"id": None}},
+                        {"id": OLD2_TAB, "content": {"id": ""}},
+                        {"id": OLD2_TAB, "content": "not a dict"},
+                        {"id": None, "content": {"id": OLD2_CONTENT}},
+                        {"content": {"id": OLD2_CONTENT}},
+                        "not a dict",
+                    ],
+                }
+            ]
+        }
+
+        saved = self.load(defaults_xml({LAYOUTS_KEY: {"layout": layout}}))
+
+        self.assertEqual(saved.contents, {OLD_TAB: OLD_CONTENT})
+
+    def test_load_saved_layout_returns_none_for_unusable_layouts(self) -> None:
+        tab = {"id": OLD_TAB, "content": {"id": OLD_CONTENT}}
+        cases = {
+            "empty domain": EMPTY_DEFAULTS,
+            "malformed xml": "<plist><dict>",
+            "no dict": '<plist version="1.0"><array/></plist>',
+            "missing key": defaults_xml_data(None),
+            "bad base64": defaults_xml_data("!!!not base64!!!"),
+            "bad json": defaults_xml_data(base64.b64encode(b"not json").decode()),
+            "bad utf8": defaults_xml_data(base64.b64encode(b"\xff\xfe").decode()),
+            "oversized int": defaults_xml_data(
+                base64.b64encode(b'{"x": ' + b"1" * 5000 + b"}").decode()
+            ),
+            "root not dict": defaults_xml_data(base64.b64encode(b"[]").decode()),
+            "worktrees not dict": defaults_xml(None, raw={"schemaVersion": 2, "worktrees": []}),
+            "other paths only": defaults_xml({"/tmp/other bench/": layout_entry(((OLD_TAB, OLD_CONTENT),))}),
+            "entry not dict": defaults_xml({LAYOUTS_KEY: [tab]}),
+            "layout not dict": defaults_xml({LAYOUTS_KEY: {"layout": []}}),
+            "panes not list": defaults_xml({LAYOUTS_KEY: {"layout": {"panes": {}}}}),
+            "pane not dict": defaults_xml({LAYOUTS_KEY: {"layout": {"panes": ["x"]}}}),
+            "tabs not list": defaults_xml({LAYOUTS_KEY: {"layout": {"panes": [{"tabs": tab}]}}}),
+            "tabs missing content id": defaults_xml(
+                {LAYOUTS_KEY: {"layout": {"panes": [{"tabs": [{"id": OLD_TAB}]}]}}}
+            ),
+        }
+        for name, xml in cases.items():
+            with self.subTest(name=name):
+                self.assertIsNone(self.load(xml))
 
     def test_layouts_key_round_trips_to_worktree_id(self) -> None:
         self.assertEqual(SETUP_BENCH.layouts_key(BENCH_PATH), LAYOUTS_KEY)
         self.assertEqual(quote(SETUP_BENCH.layouts_key(BENCH_PATH), safe=""), WORKTREE)
         self.assertEqual(SETUP_BENCH.worktree_id(BENCH_PATH), WORKTREE)
-
-    def test_refuses_unexpected_initial_surface_layout(self) -> None:
-        runner = happy_runner()
-        runner.responses[
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", WORK_TAB)
-        ][0] = f"{WORK_SURFACE}\n{COMPANION_TAB}\n"
-
-        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "exactly one default surface"):
-            SETUP_BENCH.setup_bench(request(), run=runner)
-
-    def test_refuses_a_nondefault_surface_id(self) -> None:
-        runner = happy_runner()
-        runner.responses[
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", WORK_TAB)
-        ][0] = f"{WORK_TAB}\n"
-
-        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "distinct id"):
-            SETUP_BENCH.setup_bench(request(), run=runner)
 
     def test_refuses_missing_zmx_session_before_renaming(self) -> None:
         runner = happy_runner()
@@ -847,7 +960,6 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(runner.commands, [])
 
-
     def test_rejects_an_invalid_companion_final_tab_layout(self) -> None:
         runner = happy_runner(
             companion_title=COMPANION_TITLE,
@@ -863,18 +975,6 @@ class SetupBenchTests(unittest.TestCase):
             ("supacode", "tab", "focus", "-w", WORKTREE, "-t", WORK_TAB),
         )
 
-    def test_rejects_a_companion_surface_mismatch(self) -> None:
-        runner = happy_runner(
-            companion_title=COMPANION_TITLE,
-            companion_command=COMPANION_COMMAND,
-        )
-        runner.responses[
-            ("supacode", "surface", "list", "-w", WORKTREE, "-t", COMPANION_TAB)
-        ][0] = f"{WORK_SURFACE}\n"
-
-        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "Companion surface"):
-            SETUP_BENCH.setup_bench(companion_request(), run=runner)
-
     def test_accepts_zmx_cwd_session_details(self) -> None:
         runner = happy_runner()
         runner.responses[("zmx", "list")][0] = (
@@ -886,7 +986,6 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(result.work_shell_pid, WORK_SHELL_PID)
         runner.assert_consumed()
-
 
     def test_rejects_a_backing_session_outside_the_bench_path(self) -> None:
         runner = happy_runner()
@@ -909,8 +1008,8 @@ class SetupBenchTests(unittest.TestCase):
     def test_bench_result_as_dict_preserves_nullable_companion_fields(self) -> None:
         result = SETUP_BENCH.BenchResult(
             worktree=WORKTREE,
+            pane=PANE,
             work_tab=WORK_TAB,
-            work_surface=WORK_SURFACE,
             work_session=WORK_SESSION,
             work_shell_pid=WORK_SHELL_PID,
             harness_tabs=(
@@ -918,13 +1017,11 @@ class SetupBenchTests(unittest.TestCase):
                     role="work",
                     title="Work",
                     tab=WORK_TAB,
-                    surface=WORK_SURFACE,
                     session=WORK_SESSION,
                     shell_pid=WORK_SHELL_PID,
                 ),
             ),
             companion_tab=None,
-            companion_surface=None,
             companion_session=None,
             companion_shell_pid=None,
             pinned=False,
@@ -959,25 +1056,6 @@ class SetupBenchTests(unittest.TestCase):
         self.assertEqual(parsed.companion_command, COMPANION_COMMAND)
         self.assertEqual(parsed.harness_tabs, (harness_tab("work", "Work", HARNESS),))
         self.assertTrue(parsed.pin)
-
-
-    def test_cli_parses_layouts_file(self) -> None:
-        parsed = SETUP_BENCH.parse_args(
-            [
-                "--path",
-                BENCH_PATH,
-                "--title",
-                "Example task",
-                "--color",
-                "blue",
-                "--layouts-file",
-                "/tmp/layouts.json",
-                "--",
-                *HARNESS,
-            ]
-        )
-
-        self.assertEqual(parsed.layouts_file, "/tmp/layouts.json")
 
     def test_cli_parses_harness_tabs_json(self) -> None:
         parsed = SETUP_BENCH.parse_args(
@@ -1026,7 +1104,6 @@ class SetupBenchTests(unittest.TestCase):
                     ),
                 ]
             )
-
 
     def test_cli_rejects_harness_tabs_json_without_work_role(self) -> None:
         with self.assertRaises(SystemExit):
@@ -1106,6 +1183,104 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(json.loads(output)["closed_restored_tabs"], [])
         runner.assert_consumed()
+
+    def test_issue_12_default_tab_id_is_the_session_id(self) -> None:
+        runner = happy_runner()
+
+        result = SETUP_BENCH.setup_bench(request(), run=runner)
+
+        session = f"supa-{WORK_TAB.lower()}"
+        self.assertEqual(result.work_session, session)
+        self.assertIn(("zmx", "run", session, "-d", *HARNESS), runner.commands)
+        runner.assert_consumed()
+
+    def test_extra_tabs_are_created_in_the_pane(self) -> None:
+        harness_tabs = (
+            harness_tab("plan", "Plan", PLAN_HARNESS),
+            harness_tab("work", "Work", WORK_HARNESS),
+        )
+        runner = happy_runner(
+            companion_title=COMPANION_TITLE,
+            companion_command=COMPANION_COMMAND,
+            harness_tabs=harness_tabs,
+        )
+
+        SETUP_BENCH.setup_bench(
+            request(
+                companion_title=COMPANION_TITLE,
+                companion_command=COMPANION_COMMAND,
+                harness_tabs=harness_tabs,
+            ),
+            run=runner,
+        )
+
+        new_commands = [c for c in runner.commands if c[:3] == ("supacode", "tab", "new")]
+        self.assertEqual(len(new_commands), 2)
+        for command in new_commands:
+            self.assertEqual(command[3:7], ("-w", WORKTREE, "--pane", PANE))
+        runner.assert_consumed()
+
+    def test_refuses_two_initial_panes_before_renaming(self) -> None:
+        runner = happy_runner()
+        runner.responses[("supacode", "pane", "list", "-w", WORKTREE)][0] = (
+            f"{PANE}\n{OTHER_PANE}\n"
+        )
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "exactly one pane"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
+
+    def test_refuses_when_final_panes_differ(self) -> None:
+        runner = happy_runner()
+        runner.responses[("supacode", "pane", "list", "-w", WORKTREE)][1] = (
+            f"{PANE}\n{OTHER_PANE}\n"
+        )
+
+        with self.assertRaisesRegex(SETUP_BENCH.SetupError, "Unexpected final panes"):
+            SETUP_BENCH.setup_bench(request(), run=runner)
+
+        self.assertNotEqual(runner.commands[-1][:3], ("supacode", "tab", "focus"))
+
+    def test_as_dict_has_pane_and_no_surface_keys(self) -> None:
+        runner = happy_runner(
+            companion_title=COMPANION_TITLE,
+            companion_command=COMPANION_COMMAND,
+        )
+
+        data = SETUP_BENCH.setup_bench(companion_request(), run=runner).as_dict()
+
+        self.assertEqual(data["pane"], PANE)
+        self.assertEqual(list(data)[:2], ["worktree", "pane"])
+        keys = set(data)
+        for tab in data["harness_tabs"]:
+            keys.update(tab)
+        self.assertFalse([key for key in keys if "surface" in key])
+
+    def test_happy_runs_never_use_surface_commands(self) -> None:
+        two = (
+            harness_tab("plan", "Plan", PLAN_HARNESS),
+            harness_tab("work", "Work", WORK_HARNESS),
+        )
+        cases = [
+            {},
+            {"harness_tabs": two},
+            {"companion_title": COMPANION_TITLE, "companion_command": COMPANION_COMMAND},
+            {
+                "companion_title": COMPANION_TITLE,
+                "companion_command": COMPANION_COMMAND,
+                "harness_tabs": two,
+                "pin": True,
+            },
+        ]
+        for kwargs in cases:
+            with self.subTest(kwargs=kwargs):
+                runner = happy_runner(**kwargs)
+                SETUP_BENCH.setup_bench(request(**kwargs), run=runner)
+                self.assertFalse(
+                    [c for c in runner.commands if c[:2] == ("supacode", "surface")]
+                )
+                runner.assert_consumed()
 
 
 if __name__ == "__main__":

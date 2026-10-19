@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import json
 import os
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+import xml.etree.ElementTree as ElementTree
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import quote
@@ -25,7 +28,8 @@ class Runner(Protocol):
 
 HARNESS_ROLES = frozenset({"plan", "work"})
 
-DEFAULT_LAYOUTS_FILE = "~/.supacode/layouts.json"
+SUPACODE_DEFAULTS_DOMAIN = "app.supabit.supacode"
+LAYOUTS_DEFAULTS_KEY = "layoutsFile"
 
 
 @dataclass(frozen=True)
@@ -40,7 +44,6 @@ class HarnessTabResult:
     role: str
     title: str
     tab: str
-    surface: str
     session: str
     shell_pid: int
 
@@ -49,7 +52,6 @@ class HarnessTabResult:
             "role": self.role,
             "title": self.title,
             "tab": self.tab,
-            "surface": self.surface,
             "session": self.session,
             "shell_pid": self.shell_pid,
         }
@@ -57,7 +59,12 @@ class HarnessTabResult:
 
 @dataclass(frozen=True)
 class SavedLayout:
-    tab_ids: frozenset[str]
+    contents: Mapping[str, str]
+    """Saved tab id -> saved content id (the zmx session is supa-<content id lower>)."""
+
+    @property
+    def tab_ids(self) -> frozenset[str]:
+        return frozenset(self.contents)
 
 
 @dataclass(frozen=True)
@@ -69,19 +76,17 @@ class BenchRequest:
     companion_title: str | None = None
     companion_command: str | None = None
     pin: bool = False
-    layouts_file: str | None = None
 
 
 @dataclass(frozen=True)
 class BenchResult:
     worktree: str
+    pane: str
     work_tab: str
-    work_surface: str
     work_session: str
     work_shell_pid: int
     harness_tabs: tuple[HarnessTabResult, ...]
     companion_tab: str | None
-    companion_surface: str | None
     companion_session: str | None
     companion_shell_pid: int | None
     pinned: bool
@@ -95,13 +100,12 @@ class BenchResult:
     ]:
         return {
             "worktree": self.worktree,
+            "pane": self.pane,
             "work_tab": self.work_tab,
-            "work_surface": self.work_surface,
             "work_session": self.work_session,
             "work_shell_pid": self.work_shell_pid,
             "harness_tabs": [tab.as_dict() for tab in self.harness_tabs],
             "companion_tab": self.companion_tab,
-            "companion_surface": self.companion_surface,
             "companion_session": self.companion_session,
             "companion_shell_pid": self.companion_shell_pid,
             "pinned": self.pinned,
@@ -131,7 +135,7 @@ def normalized_path(path: str) -> str:
 
 
 def layouts_key(path: str) -> str:
-    """Return Supacode's layouts.json key for a local worktree path."""
+    """Return Supacode's saved-layouts key for a local worktree path."""
     return normalized_path(path).rstrip(os.sep) + os.sep
 
 
@@ -140,35 +144,84 @@ def worktree_id(path: str) -> str:
     return quote(layouts_key(path), safe="")
 
 
-def load_saved_layout(path: str, layouts_file: str) -> SavedLayout | None:
-    """Load saved Supacode tab ids for a worktree path without mutating layouts."""
-    expanded_layouts_file = os.path.abspath(os.path.expanduser(layouts_file))
+def defaults_data(xml_text: str, key: str) -> bytes | None:
+    """Return a top-level <data> value from `defaults export` XML.
+
+    plistlib cannot parse Supacode's domain (it stores a year-0 date), so walk
+    the XML directly: the root <plist> holds one <dict> of alternating
+    <key> and value elements.
+    """
     try:
-        with open(expanded_layouts_file, encoding="utf-8") as file:
-            layouts = json.load(file)
-    except FileNotFoundError:
+        root = ElementTree.fromstring(xml_text)
+    except ElementTree.ParseError:
         return None
-    except json.JSONDecodeError:
+    top = root.find("dict")
+    if top is None:
         return None
-    except OSError as error:
-        raise SetupError(f"Could not read Supacode layouts: {error}") from error
+    children = list(top)
+    for index in range(0, len(children) - 1, 2):
+        key_element, value = children[index], children[index + 1]
+        if key_element.tag == "key" and key_element.text == key:
+            if value.tag != "data":
+                return None
+            text = "".join((value.text or "").split())
+            try:
+                return base64.b64decode(text, validate=True)
+            except (binascii.Error, ValueError):
+                return None
+    return None
+
+
+def load_saved_layout(path: str, *, run: Runner) -> SavedLayout | None:
+    """Load saved Supacode tab and content ids for a worktree path, read-only."""
+    data = defaults_data(
+        run(("defaults", "export", SUPACODE_DEFAULTS_DOMAIN, "-")),
+        LAYOUTS_DEFAULTS_KEY,
+    )
+    if data is None:
+        return None
+    try:
+        layouts = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
 
     if not isinstance(layouts, dict):
         return None
-    entry = layouts.get(layouts_key(path))
+    worktrees = layouts.get("worktrees")
+    if not isinstance(worktrees, dict):
+        return None
+    entry = worktrees.get(layouts_key(path))
     if not isinstance(entry, dict):
         return None
-    tabs = entry.get("tabs")
-    if not isinstance(tabs, list):
+    layout = entry.get("layout")
+    if not isinstance(layout, dict):
         return None
-    tab_ids = frozenset(
-        tab["id"]
-        for tab in tabs
-        if isinstance(tab, dict) and isinstance(tab.get("id"), str) and tab["id"]
-    )
-    if not tab_ids:
+    panes = layout.get("panes")
+    if not isinstance(panes, list):
         return None
-    return SavedLayout(tab_ids)
+    contents: dict[str, str] = {}
+    for pane in panes:
+        if not isinstance(pane, dict):
+            return None
+        tabs = pane.get("tabs")
+        if not isinstance(tabs, list):
+            return None
+        for tab in tabs:
+            if not isinstance(tab, dict):
+                continue
+            tab_id = tab.get("id")
+            content = tab.get("content")
+            content_id = content.get("id") if isinstance(content, dict) else None
+            if (
+                isinstance(tab_id, str)
+                and tab_id
+                and isinstance(content_id, str)
+                and content_id
+            ):
+                contents[tab_id] = content_id
+    if not contents:
+        return None
+    return SavedLayout(contents)
 
 
 def output_lines(output: str) -> list[str]:
@@ -252,6 +305,25 @@ def wait_for_worktree(
         sleep(poll_interval)
 
 
+def wait_for_tabs(
+    worktree: str,
+    *,
+    run: Runner,
+    sleep: Callable[[float], None],
+    monotonic: Callable[[], float],
+    timeout: float,
+    poll_interval: float,
+) -> list[str]:
+    deadline = monotonic() + timeout
+    while True:
+        tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
+        if tabs:
+            return tabs
+        if monotonic() >= deadline:
+            raise SetupError(f"Supacode worktree has no tabs: {worktree}")
+        sleep(poll_interval)
+
+
 def validate_harness_tabs(harness_tabs: Sequence[HarnessTab]) -> tuple[HarnessTab, ...]:
     if not harness_tabs:
         raise SetupError("At least one harness tab is required")
@@ -320,13 +392,9 @@ def close_restored_tabs(
     if not restored_tabs:
         return fresh_tab, ()
 
-    restored_sessions: list[tuple[str, str]] = []
-    for tab in restored_tabs:
-        surface = exactly_one(
-            output_lines(run(("supacode", "surface", "list", "-w", worktree, "-t", tab))),
-            f"surface in restored tab {tab}",
-        )
-        restored_sessions.append((tab, f"supa-{surface.lower()}"))
+    restored_sessions = [
+        (tab, f"supa-{saved.contents[tab].lower()}") for tab in restored_tabs
+    ]
 
     sessions = parse_zmx_sessions(run(("zmx", "list")))
     shell_pids: list[tuple[str, int]] = []
@@ -371,10 +439,7 @@ def setup_bench(
     existing = output_lines(run(("supacode", "worktree", "list")))
     if worktree in existing:
         raise SetupError(f"Bench worktree is already registered: {worktree}")
-    saved_layout = load_saved_layout(
-        bench_path,
-        request.layouts_file or DEFAULT_LAYOUTS_FILE,
-    )
+    saved_layout = load_saved_layout(bench_path, run=run)
 
     run(("supacode", "repo", "open", bench_path))
     wait_for_worktree(
@@ -412,7 +477,14 @@ def setup_bench(
         )
     run(("supacode", "worktree", "focus", "-w", worktree))
 
-    tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
+    tabs = wait_for_tabs(
+        worktree,
+        run=run,
+        sleep=sleep,
+        monotonic=monotonic,
+        timeout=timeout,
+        poll_interval=poll_interval,
+    )
     if saved_layout is None:
         default_tab = exactly_one(tabs, "default tab")
         closed_restored_tabs: tuple[str, ...] = ()
@@ -424,28 +496,14 @@ def setup_bench(
             bench_path,
             run=run,
         )
-    default_surface = exactly_one(
-        output_lines(
-            run(
-                (
-                    "supacode",
-                    "surface",
-                    "list",
-                    "-w",
-                    worktree,
-                    "-t",
-                    default_tab,
-                )
-            )
-        ),
-        "default surface",
+    pane = exactly_one(
+        output_lines(run(("supacode", "pane", "list", "-w", worktree))),
+        "pane",
     )
-    if default_surface == default_tab:
-        raise SetupError("Expected the default surface to have a distinct id")
 
     harness_results: list[HarnessTabResult] = []
     first = harness_tabs[0]
-    first_session = f"supa-{default_surface.lower()}"
+    first_session = f"supa-{default_tab.lower()}"
     require_short_session(first_session, run=run)
     run(
         (
@@ -466,7 +524,6 @@ def setup_bench(
             role=first.role,
             title=first.title,
             tab=default_tab,
-            surface=default_surface,
             session=first_session,
             shell_pid=0,
         )
@@ -475,17 +532,23 @@ def setup_bench(
     for tab in harness_tabs[1:]:
         tab_id = exactly_one(
             output_lines(
-                run(("supacode", "tab", "new", "-w", worktree, "--title", tab.title))
+                run(
+                    (
+                        "supacode",
+                        "tab",
+                        "new",
+                        "-w",
+                        worktree,
+                        "--pane",
+                        pane,
+                        "--title",
+                        tab.title,
+                    )
+                )
             ),
             f"{tab.role} tab id",
         )
-        surface = exactly_one(
-            output_lines(
-                run(("supacode", "surface", "list", "-w", worktree, "-t", tab_id))
-            ),
-            f"{tab.role} surface",
-        )
-        session = f"supa-{surface.lower()}"
+        session = f"supa-{tab_id.lower()}"
         require_short_session(session, run=run)
         run(("zmx", "run", session, "-d", *tab.argv))
         harness_results.append(
@@ -493,14 +556,12 @@ def setup_bench(
                 role=tab.role,
                 title=tab.title,
                 tab=tab_id,
-                surface=surface,
                 session=session,
                 shell_pid=0,
             )
         )
 
     companion_tab: str | None = None
-    companion_surface: str | None = None
     companion_session: str | None = None
     companion_shell_pid: int | None = None
     if request.companion_title is not None and request.companion_command is not None:
@@ -513,6 +574,8 @@ def setup_bench(
                         "new",
                         "-w",
                         worktree,
+                        "--pane",
+                        pane,
                         "--title",
                         request.companion_title,
                         "-i",
@@ -522,6 +585,7 @@ def setup_bench(
             ),
             "companion tab id",
         )
+        companion_session = f"supa-{companion_tab.lower()}"
 
     final_tabs = output_lines(run(("supacode", "tab", "list", "-w", worktree)))
     expected_tabs = {tab.tab for tab in harness_results}
@@ -530,47 +594,9 @@ def setup_bench(
     if len(final_tabs) != len(expected_tabs) or set(final_tabs) != expected_tabs:
         raise SetupError(f"Unexpected final tabs: {final_tabs!r}")
 
-    for index, result in enumerate(harness_results):
-        final_surface = exactly_one(
-            output_lines(
-                run(
-                    (
-                        "supacode",
-                        "surface",
-                        "list",
-                        "-w",
-                        worktree,
-                        "-t",
-                        result.tab,
-                    )
-                )
-            ),
-            f"final {result.title} surface",
-        )
-        if final_surface != result.surface:
-            raise SetupError(f"{result.title} surface changed during setup")
-        harness_results[index] = result
-
-    if companion_tab is not None:
-        companion_surface = exactly_one(
-            output_lines(
-                run(
-                    (
-                        "supacode",
-                        "surface",
-                        "list",
-                        "-w",
-                        worktree,
-                        "-t",
-                        companion_tab,
-                    )
-                )
-            ),
-            "final companion surface",
-        )
-        if companion_surface != companion_tab:
-            raise SetupError("Companion surface id does not match its tab id")
-        companion_session = f"supa-{companion_surface.lower()}"
+    panes = output_lines(run(("supacode", "pane", "list", "-w", worktree)))
+    if panes != [pane]:
+        raise SetupError(f"Unexpected final panes: {panes!r}")
 
     sessions = parse_zmx_sessions(run(("zmx", "list")))
     harness_results_with_pids: list[HarnessTabResult] = []
@@ -581,7 +607,6 @@ def setup_bench(
                 role=result.role,
                 title=result.title,
                 tab=result.tab,
-                surface=result.surface,
                 session=result.session,
                 shell_pid=shell_pid,
             )
@@ -595,13 +620,12 @@ def setup_bench(
     run(("supacode", "tab", "focus", "-w", worktree, "-t", work_result.tab))
     return BenchResult(
         worktree=worktree,
+        pane=pane,
         work_tab=work_result.tab,
-        work_surface=work_result.surface,
         work_session=work_result.session,
         work_shell_pid=work_result.shell_pid,
         harness_tabs=tuple(harness_results_with_pids),
         companion_tab=companion_tab,
-        companion_surface=companion_surface,
         companion_session=companion_session,
         companion_shell_pid=companion_shell_pid,
         pinned=request.pin,
@@ -643,7 +667,6 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
     parser.add_argument("--companion-title")
     parser.add_argument("--companion-command")
     parser.add_argument("--harness-tabs-json")
-    parser.add_argument("--layouts-file")
     parser.add_argument("--pin", action="store_true")
     parser.add_argument("harness", nargs=argparse.REMAINDER)
     parsed = parser.parse_args(list(arguments))
@@ -671,7 +694,6 @@ def parse_args(arguments: Sequence[str]) -> BenchRequest:
         companion_title=parsed.companion_title,
         companion_command=parsed.companion_command,
         pin=parsed.pin,
-        layouts_file=parsed.layouts_file,
     )
 
 
