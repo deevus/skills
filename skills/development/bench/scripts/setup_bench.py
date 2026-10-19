@@ -182,7 +182,7 @@ def load_saved_layout(path: str, *, run: Runner) -> SavedLayout | None:
         return None
     try:
         layouts = json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, ValueError):
         return None
 
     if not isinstance(layouts, dict):
@@ -212,7 +212,12 @@ def load_saved_layout(path: str, *, run: Runner) -> SavedLayout | None:
             tab_id = tab.get("id")
             content = tab.get("content")
             content_id = content.get("id") if isinstance(content, dict) else None
-            if isinstance(tab_id, str) and tab_id and isinstance(content_id, str) and content_id:
+            if (
+                isinstance(tab_id, str)
+                and tab_id
+                and isinstance(content_id, str)
+                and content_id
+            ):
                 contents[tab_id] = content_id
     if not contents:
         return None

@@ -570,7 +570,6 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertFalse(any(command[:3] == ("supacode", "tab", "rename") for command in runner.commands))
 
-
     def test_closes_idle_restored_tabs_and_reports_them(self) -> None:
         runner = restored_runner(
             happy_runner(),
@@ -857,6 +856,9 @@ class SetupBenchTests(unittest.TestCase):
             "bad base64": defaults_xml_data("!!!not base64!!!"),
             "bad json": defaults_xml_data(base64.b64encode(b"not json").decode()),
             "bad utf8": defaults_xml_data(base64.b64encode(b"\xff\xfe").decode()),
+            "oversized int": defaults_xml_data(
+                base64.b64encode(b'{"x": ' + b"1" * 5000 + b"}").decode()
+            ),
             "root not dict": defaults_xml_data(base64.b64encode(b"[]").decode()),
             "worktrees not dict": defaults_xml(None, raw={"schemaVersion": 2, "worktrees": []}),
             "other paths only": defaults_xml({"/tmp/other bench/": layout_entry(((OLD_TAB, OLD_CONTENT),))}),
@@ -925,7 +927,6 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(runner.commands, [])
 
-
     def test_rejects_an_invalid_companion_final_tab_layout(self) -> None:
         runner = happy_runner(
             companion_title=COMPANION_TITLE,
@@ -952,7 +953,6 @@ class SetupBenchTests(unittest.TestCase):
 
         self.assertEqual(result.work_shell_pid, WORK_SHELL_PID)
         runner.assert_consumed()
-
 
     def test_rejects_a_backing_session_outside_the_bench_path(self) -> None:
         runner = happy_runner()
@@ -1071,7 +1071,6 @@ class SetupBenchTests(unittest.TestCase):
                     ),
                 ]
             )
-
 
     def test_cli_rejects_harness_tabs_json_without_work_role(self) -> None:
         with self.assertRaises(SystemExit):
