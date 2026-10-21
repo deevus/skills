@@ -1,9 +1,10 @@
 # Bench configuration
 
 `bench` resolves harness and diff-viewer choices from layered TOML files plus
-explicit request flags. The resolver is the source of truth for final harness
-argv values and diff viewer choice. UI references must pass returned argv arrays
-without rebuilding them.
+explicit request flags. The resolver is the source of truth for harness argv
+values and diff viewer choice. A harness reference may add per-run launch
+arguments to that argv before the UI launch. UI references must pass the argv
+arrays they receive without rebuilding them.
 
 ## Resolver command
 

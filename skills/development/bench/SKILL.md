@@ -122,9 +122,13 @@ and viewer-specific brief text.
     Diff selections used for first-run choices. Use the refreshed `harnesses`,
     legacy `harness`, and `diff` output for the brief and UI launch.
 
-Pass each returned harness tab's `argv` to the UI adapter unchanged. Each value
-is an argv list, not a shell command string. Keep the legacy `harness` object as
-the resolved Work harness for callers that have not moved to `harnesses`.
+Pass each returned harness tab's `argv` to the UI adapter unchanged, except for
+launch adjustments that the selected harness reference requires. For example,
+the Jcode reference adds `--socket <socket>` to every Jcode argv. Apply those
+adjustments before the UI launches the tabs, and pass the adjusted argv to the
+UI. Each value is an argv list, not a shell command string. Keep the legacy
+`harness` object as the resolved Work harness for callers that have not moved
+to `harnesses`.
 
 ## Route harness integrations
 

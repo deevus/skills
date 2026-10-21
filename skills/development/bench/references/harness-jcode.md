@@ -158,12 +158,12 @@ configured model. Session IDs can change while a tab starts, so read them again
 after startup settles. If a tab still has no unique match, stop and report the
 observed state.
 
-Then confirm every role session is on the shared daemon. With a Jcode
-orchestrator (orchestrated handoff), call `swarm` with `action=list_swarms`:
-each bench session must appear in the list. If one is missing, it is on another
-daemon: stop, because a DM cannot reach it. With a non-Jcode orchestrator
-(human-mediated handoff), `clients:map` on the shared socket must list every
-role session.
+Then confirm every Jcode role session is on the shared daemon. Non-Jcode roles
+run outside Jcode, so leave them out of this check. With a Jcode orchestrator
+(orchestrated handoff), call `swarm` with `action=list_swarms`: each Jcode role
+session must appear in the list. If one is missing, it is on another daemon:
+stop, because a DM cannot reach it. Otherwise (human-mediated handoff),
+`clients:map` on the shared socket must list every Jcode role session.
 
 Record, for each role: role, friendly name, session ID, swarm ID, tab handle,
 and bench path. Put them in a "Roles and handoff" section of the brief.
@@ -299,8 +299,9 @@ before any edits. Do not edit project files.
 6. DM the Work agent {work_session} (to_swarm={work_swarm},
    delivery=wake). Say that the user approved the plan, and include the
    {work_prompt} and {plan} paths. Wait up to 2 minutes for Work to
-   acknowledge. If it does not, resend once. If it still does not, tell the
-   user that Work did not acknowledge the start.
+   acknowledge. If it does not, check Work's identity again, resend once,
+   and wait up to 2 more minutes. If Work still does not acknowledge, stop
+   waiting and tell the user that Work did not acknowledge the start.
 7. Stay available. Answer Work's questions by DM. A clarification that does
    not change scope, approach, acceptance criteria, or files needs no gate.
    For a plan change, revise {plan} in place with a `## Proposed change`
@@ -345,8 +346,8 @@ Add these to the core final verification:
 
 - every Jcode argv launched with the same `--socket`, and `server:info` answered
   on it;
-- every role session is on the shared daemon: in `list_swarms` for a Jcode
-  orchestrator, in `clients:map` for a non-Jcode orchestrator;
+- every Jcode role session is on the shared daemon: in `list_swarms` for the
+  orchestrated handoff, in `clients:map` for the human-mediated handoff;
 - the brief records each role's identity;
 - each role's model and effort were verified before its DM, with any rejected
   `/effort` recorded as model default;
