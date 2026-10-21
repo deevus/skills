@@ -58,14 +58,37 @@ title = "Work"
 command = ["jcode", "--cwd", ".", "--provider", "<provider>", "--model", "<model>"]
 ```
 
-Leave `--socket` out of the configuration. Bench picks the socket for each run.
+Leave `--socket` out of the configuration. Bench adds it for each run.
 
 ## Pick the shared daemon socket
 
 Swarm DMs work only between sessions on one daemon. A Jcode tab launched with no
-`--socket` uses the default for its environment, and some UIs inject a
-per-terminal `JCODE_RUNTIME_DIR`. That gives each tab its own daemon and breaks
-the handoff. Always pass one socket for all roles.
+`--socket` uses the daemon of its runtime directory, so tabs with different
+runtime directories land on different daemons and cannot DM each other. Always
+pass one socket for all roles.
+
+### Orca
+
+Orca gives every terminal pane its own Jcode runtime directory, on purpose. It
+sets `JCODE_RUNTIME_DIR=$TMPDIR/orca-jcode/<hash>` per pane. The daemon socket
+is `$JCODE_RUNTIME_DIR/jcode.sock`. Orca does this so each pane's hooks and tool
+commands run with that pane's environment and status. See
+[stablyai/orca#30257](https://github.com/stablyai/orca/pull/30257) and
+`src/shared/jcode-runtime-dir.ts` in the Orca repository.
+
+On an Orca bench, discover the socket from the orchestrator's own pane:
+
+```bash
+printf '%s\n' "${JCODE_RUNTIME_DIR:?not an Orca Jcode pane}/jcode.sock"
+```
+
+Pass that socket to every role so all of them join the orchestrator's daemon.
+The trade-off: the bench roles then run tool commands with the environment of
+the orchestrator's pane, and Orca shows their status under that pane. That is
+the cost of DMs between roles. If the orchestrator is not a Jcode pane in Orca,
+use the `servers.json` steps below.
+
+### Other UIs
 
 1. List the sockets of live daemons from `~/.jcode/servers.json`:
 
@@ -91,10 +114,21 @@ the handoff. Always pass one socket for all roles.
 4. Always take the socket from `servers.json`. Inside a session, `TMPDIR` can
    point at the session scratch directory, so the default path can be stale.
 
-Rerun the resolver with `--jcode-socket <socket>`, plus every earlier explicit
-selection. The resolver checks that the path is a live Unix socket and inserts
-`--socket <socket>` after the executable in every Jcode argv. Pass that argv to
-the UI reference unchanged.
+### Add the socket to the launch argv
+
+Add `--socket <socket>` after the executable in every Jcode harness argv, by
+hand, before you pass the tab specs to the UI reference. Leave other harnesses
+unchanged. For example, the resolved argv
+`["jcode", "--cwd", ".", "--model", "<model>"]` becomes
+`["jcode", "--socket", "<socket>", "--cwd", ".", "--model", "<model>"]`.
+
+Before launch, confirm the socket accepts connections:
+
+```bash
+jcode debug --socket "<socket>" server:info | jq -r .name
+```
+
+If it fails, stop: the daemon is gone or the path is stale.
 
 ## Identify live sessions
 
@@ -199,27 +233,20 @@ is not Jcode, use the core skill's human-mediated handoff.
 
 ### Placeholders
 
-| Placeholder                                      | Value                                     |
-| ------------------------------------------------ | ----------------------------------------- |
-| `{brief}`                                        | Absolute path of the handoff brief        |
-| `{plan}`                                         | `<brief dir>/<brief stem>-plan.md`        |
-| `{work_prompt}`                                  | `<brief dir>/<brief stem>-work-prompt.md` |
-| `{plan_session}`, `{plan_swarm}`                 | Plan friendly name and swarm ID           |
-| `{work_session}`, `{work_swarm}`                 | Work friendly name and swarm ID           |
-| `{orchestrator_session}`, `{orchestrator_swarm}` | Orchestrator friendly name and swarm ID   |
-| `{approval_gate}`                                | How the user approves a plan, see below   |
-| `{change_rule}`                                  | Plan change rule, see below               |
+| Placeholder                                      | Value                                        |
+| ------------------------------------------------ | -------------------------------------------- |
+| `{brief}`                                        | Absolute path of the handoff brief           |
+| `{plan}`                                         | `<brief dir>/<brief stem>-plan.md`           |
+| `{work_prompt}`                                  | `<brief dir>/<brief stem>-work-prompt.md`    |
+| `{plan_session}`, `{plan_swarm}`                 | Plan friendly name and swarm ID              |
+| `{work_session}`, `{work_swarm}`                 | Work friendly name and swarm ID              |
+| `{orchestrator_session}`, `{orchestrator_swarm}` | Orchestrator friendly name and swarm ID      |
+| `{approval_gate}`                                | Gate text from the approval gate reference   |
+| `{change_rule}`                                  | Change rule from the approval gate reference |
 
-Set `{approval_gate}` to: "Present `{plan}` with the `plannotator-plan` skill
-and loop until its decision is `approved`." when that skill is installed.
-Otherwise use: "Show the user `{plan}` and wait for an explicit approval
-message."
-
-Set `{change_rule}` to: "A plan change needs the user's approval through the
-same gate. Urgency or 'keep moving' is not a waiver." If the user explicitly
-said that Plan may approve changes itself on this bench, use: "The user waived
-approval for plan changes on this bench. Record each change in `{plan}`." Record
-the waiver in the brief.
+Take `{approval_gate}` and `{change_rule}` from the
+[Bench Approval Gate](approval-gate.md) reference, using the gate recorded in
+the brief.
 
 ### Work DM
 
@@ -281,7 +308,8 @@ bench state, not a landing offer.
 
 Add these to the core final verification:
 
-- every Jcode argv has the same `--socket`;
+- every Jcode argv launched with the same `--socket`, and `server:info` answered
+  on it;
 - every role session appears in `list_swarms` from the orchestrator;
 - the brief records each role's identity;
 - each role's model and effort were verified before its DM, with any rejected

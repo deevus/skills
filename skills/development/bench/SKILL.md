@@ -132,9 +132,10 @@ Each resolved harness has a `family`: the preset tool name, or the executable
 basename of a custom command. Use it to pick harness-specific guidance:
 
 - If any harness has `family: "jcode"`, read
-  [Bench Harness Jcode](references/harness-jcode.md) before you launch tabs. It
-  picks the shared daemon socket, which needs one more resolver run with
-  `--jcode-socket`, and it owns the Jcode handoff.
+  [Bench Harness Jcode](references/harness-jcode.md) before you create the
+  workspace. It has prerequisites to check first, and it adds the shared daemon
+  socket to each Jcode argv before the UI launches the tabs. It also owns the
+  Jcode handoff.
 - Otherwise do not read a harness reference.
 
 Harness, UI, and diff routing are independent. For example, a Supacode bench
@@ -157,7 +158,10 @@ When the resolver returns both Plan and Work harnesses, pick the handoff mode:
   4. Do not make bench or the UI adapter signal Work directly.
 
 In both modes, Work starts implementation only after the user approves the
-plan. The UI adapter never signals Work.
+plan. The UI adapter never signals Work. Read
+[Bench Approval Gate](references/approval-gate.md) to pick how the user approves
+the plan, with Plannotator or an explicit message, and record that gate in the
+brief.
 
 ## Create the native workspace
 
@@ -228,8 +232,9 @@ request, tracker, PR metadata, resolver output, and selected diff integration:
 - selected harness tabs, roles, titles, and argv values in readable form;
 - selected diff tool, or that no companion was requested;
 - companion command and viewer-specific instructions, if a companion exists;
-- for split harnesses, the handoff mode: the Plan-to-Work paste instruction,
-  or the role identities and handoff section from the harness reference; and
+- for split harnesses, the handoff mode and the approval gate: the Plan-to-Work
+  paste instruction, or the role identities and handoff section from the
+  harness reference; and
 - known constraints and open questions.
 
 A thin brief is correct when the ticket is thin. Put uncertainty in open

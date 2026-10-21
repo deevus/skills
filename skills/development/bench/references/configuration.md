@@ -18,9 +18,9 @@ python3 <bench-skill-dir>/scripts/resolve_bench_config.py \
 ```
 
 After a user choice, run the same command again with `--harness-tool`,
-`--plan-harness-tool`, `--diff-tool`, and/or `--jcode-socket`. Include all
-earlier explicit selections on every rerun, so a later Plan, Work, or Diff
-choice does not drop an earlier choice.
+`--plan-harness-tool`, and/or `--diff-tool`. Include all earlier explicit
+selections on every rerun, so a later Plan, Work, or Diff choice does not drop
+an earlier choice.
 
 ## Precedence
 
@@ -164,11 +164,10 @@ rendered prompt as the final argv item only when that harness role has a prompt.
   request.
 - `--diff-tool auto|comview|hunk|none` selects or overrides the diff viewer for
   this request.
-- `--jcode-socket PATH` puts every harness with `family: "jcode"` on one Jcode
-  daemon. The resolver inserts `--socket PATH` after the executable in each
-  Jcode argv and leaves other harnesses unchanged. `PATH` must be absolute and
-  must be a live Unix socket. A Jcode command that already sets `--socket` is
-  an error.
+
+The resolver knows no harness-specific launch flags. A harness reference that
+needs per-run argv, such as the Jcode daemon socket, adds it to the resolved
+argv itself before the UI launches the tab.
 
 Explicit harness flags clear inherited `command` and `permission_mode` for their
 role. If the role did not exist, the flag creates it with the default prompt
@@ -275,7 +274,4 @@ conflicting, including:
 - `tool` combined with `command` in one harness table;
 - `permission_mode` with Codex, Pi, Ask, or a custom command;
 - unsupported placeholders such as `{ticket}`;
-- missing executables for configured harnesses or explicit diff viewers;
-- a `--jcode-socket` path that is relative, missing, not a socket, or not
-  accepting connections; and
-- `--jcode-socket` with a Jcode command that already sets `--socket`.
+- missing executables for configured harnesses or explicit diff viewers.
