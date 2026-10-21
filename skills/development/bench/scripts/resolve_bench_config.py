@@ -22,10 +22,19 @@ HARNESS_ROLES = frozenset({"plan", "work"})
 ROLE_ORDER = ("plan", "work")
 ROLE_TITLES = {"plan": "Plan", "work": "Work"}
 DIFF_TOOLS = frozenset({"auto", "comview", "hunk", "none"})
-HARNESS_KEYS = frozenset({"tool", "permission_mode", "prompt", "command"})
+HARNESS_KEYS = frozenset({"tool", "permission_mode", "prompt", "command", "effort"})
 ROLE_HARNESS_KEYS = HARNESS_KEYS | frozenset({"role", "title", "enabled"})
 DIFF_KEYS = frozenset({"tool"})
 TOP_LEVEL_KEYS = frozenset({"harness", "harnesses", "diff"})
+# Reasoning-effort levels each preset accepts at launch, from its --help.
+PRESET_EFFORTS = {
+    "claude": ("low", "medium", "high", "xhigh", "max"),
+    "codex": ("minimal", "low", "medium", "high", "xhigh"),
+    "pi": ("off", "minimal", "low", "medium", "high", "xhigh", "max"),
+}
+# Custom-command families whose harness reference applies effort after launch.
+# Keep in step with references/harness-*.md.
+POST_LAUNCH_EFFORT_FAMILIES = frozenset({"jcode"})
 
 
 class ConfigError(ValueError):
@@ -40,6 +49,7 @@ class HarnessConfig:
     command: tuple[str, ...] | None = None
     title: str | None = None
     use_default_prompt: bool = True
+    effort: str | None = None
 
 
 @dataclasses.dataclass
@@ -214,6 +224,10 @@ def merge_harness_layer(
     if "prompt" in data:
         config.prompt = require_non_empty_string(data["prompt"], "harness.prompt", source)
 
+    # Effort is a per-role intent, so it survives a tool or command change.
+    if "effort" in data:
+        config.effort = require_non_empty_string(data["effort"], "harness.effort", source)
+
 
 def merge_diff_layer(config: DiffConfig, data: dict[str, Any], *, source: str) -> None:
     unknown_keys = set(data) - DIFF_KEYS
@@ -286,9 +300,36 @@ def render_prompt(config: HarnessConfig, *, brief: pathlib.Path) -> str | None:
 
 
 def with_role(
-    result: dict[str, Any], *, role: str, title: str, family: str | None
+    result: dict[str, Any],
+    *,
+    role: str,
+    title: str,
+    family: str | None,
+    effort: str | None = None,
+    effort_applied: str | None = None,
 ) -> dict[str, Any]:
-    return {"role": role, "title": title, "family": family, **result}
+    return {
+        "role": role,
+        "title": title,
+        "family": family,
+        "effort": effort,
+        "effort_applied": effort_applied,
+        **result,
+    }
+
+
+def preset_effort(tool: str, effort: str | None) -> str | None:
+    """Return the effort to render for a preset, after checking its levels."""
+    if effort is None:
+        return None
+    if effort not in PRESET_EFFORTS[tool]:
+        allowed = ", ".join(PRESET_EFFORTS[tool])
+        raise ConfigError(f"Unsupported {tool} effort: {effort} (use one of: {allowed})")
+    return effort
+
+
+def applied_at_launch(effort: str | None) -> str | None:
+    return None if effort is None else "argv"
 
 
 def command_family(argv: Sequence[str]) -> str:
@@ -312,6 +353,13 @@ def resolve_harness(
             raise ConfigError("harness.permission_mode cannot be used with harness.command")
         argv = [render_template(arg, brief=brief) for arg in config.command]
         require_executable(argv[0], which)
+        family = command_family(argv)
+        if config.effort is not None and family not in POST_LAUNCH_EFFORT_FAMILIES:
+            raise ConfigError(
+                f"{role} harness sets effort, but no harness reference applies effort "
+                f"for {family} custom commands. Put the effort flag in command, or use "
+                "a preset tool."
+            )
         if prompt is not None:
             argv.append(prompt)
         return with_role(
@@ -323,7 +371,9 @@ def resolve_harness(
             },
             role=role,
             title=title,
-            family=command_family(argv),
+            family=family,
+            effort=config.effort,
+            effort_applied=None if config.effort is None else "post_launch",
         )
 
     tool = config.tool or "ask"
@@ -343,6 +393,7 @@ def resolve_harness(
                 role=role,
                 title=title,
                 family=None,
+                effort=config.effort,
             )
 
     if tool == "claude":
@@ -350,7 +401,10 @@ def resolve_harness(
         if permission_mode not in CLAUDE_PERMISSION_MODES:
             raise ConfigError(f"Unsupported Claude permission_mode: {permission_mode}")
         require_executable("claude", which)
+        effort = preset_effort("claude", config.effort)
         argv = ["claude", "--permission-mode", permission_mode]
+        if effort is not None:
+            argv.extend(["--effort", effort])
         if prompt is not None:
             argv.append(prompt)
         return with_role(
@@ -363,13 +417,18 @@ def resolve_harness(
             role=role,
             title=title,
             family="claude",
+            effort=effort,
+            effort_applied=applied_at_launch(effort),
         )
 
     if tool == "codex":
         if config.permission_mode is not None:
             raise ConfigError("harness.permission_mode is not supported for codex")
         require_executable("codex", which)
+        effort = preset_effort("codex", config.effort)
         argv = ["codex"]
+        if effort is not None:
+            argv.extend(["-c", f'model_reasoning_effort="{effort}"'])
         if prompt is not None:
             argv.append(prompt)
         return with_role(
@@ -382,13 +441,18 @@ def resolve_harness(
             role=role,
             title=title,
             family="codex",
+            effort=effort,
+            effort_applied=applied_at_launch(effort),
         )
 
     if tool == "pi":
         if config.permission_mode is not None:
             raise ConfigError("harness.permission_mode is not supported for pi")
         require_executable("pi", which)
+        effort = preset_effort("pi", config.effort)
         argv = ["pi"]
+        if effort is not None:
+            argv.extend(["--thinking", effort])
         if prompt is not None:
             argv.extend([f"@{brief}", prompt])
         return with_role(
@@ -401,6 +465,8 @@ def resolve_harness(
             role=role,
             title=title,
             family="pi",
+            effort=effort,
+            effort_applied=applied_at_launch(effort),
         )
 
     raise ConfigError(f"Unsupported harness.tool: {tool}")
@@ -452,6 +518,17 @@ def apply_harness_tool_override(
     config.disabled_roles.discard(role)
 
 
+def apply_effort_override(
+    config: BenchConfig, *, role: str, effort: str, source: str
+) -> None:
+    if effort == "":
+        raise ConfigError(f"{source} must be a non-empty string")
+    harness = config.harnesses.get(role)
+    if harness is None:
+        raise ConfigError(f"{source} was given, but no {ROLE_TITLES[role]} harness is configured")
+    harness.effort = effort
+
+
 def resolved_harnesses(
     config: BenchConfig, *, brief: pathlib.Path, which: Callable[[str], str | None]
 ) -> list[dict[str, Any]]:
@@ -479,6 +556,8 @@ def resolve_config(
     harness_tool: str | None = None,
     plan_harness_tool: str | None = None,
     diff_tool: str | None = None,
+    work_effort: str | None = None,
+    plan_effort: str | None = None,
     which: Callable[[str], str | None] | None = None,
 ) -> dict[str, Any]:
     which = shutil.which if which is None else which
@@ -500,6 +579,11 @@ def resolve_config(
         raise ConfigError("work harness is disabled and no explicit Work override was provided")
     if "work" not in config.harnesses:
         config.harnesses["work"] = HarnessConfig(use_default_prompt=True)
+
+    if plan_effort is not None:
+        apply_effort_override(config, role="plan", effort=plan_effort, source="--plan-effort")
+    if work_effort is not None:
+        apply_effort_override(config, role="work", effort=work_effort, source="--effort")
 
     if diff_tool is not None:
         if diff_tool not in DIFF_TOOLS:
@@ -540,6 +624,14 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         choices=sorted(DIFF_TOOLS),
         help="explicit diff viewer selection for this request",
     )
+    parser.add_argument(
+        "--effort",
+        help="reasoning effort for the Work harness for this request",
+    )
+    parser.add_argument(
+        "--plan-effort",
+        help="reasoning effort for the Plan harness for this request",
+    )
     return parser.parse_args(argv)
 
 
@@ -551,6 +643,8 @@ def execute(argv: Sequence[str]) -> str:
         harness_tool=args.harness_tool,
         plan_harness_tool=args.plan_harness_tool,
         diff_tool=args.diff_tool,
+        work_effort=args.effort,
+        plan_effort=args.plan_effort,
     )
     return json.dumps(resolved, indent=2, sort_keys=True) + "\n"
 

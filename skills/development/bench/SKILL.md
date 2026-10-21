@@ -240,6 +240,8 @@ request, tracker, PR metadata, resolver output, and selected diff integration:
 - links and IDs;
 - resolved base revision;
 - selected harness tabs, roles, titles, and argv values in readable form;
+- each role's effort and how it was applied: in the argv, after launch by the
+  harness reference, or none (model default);
 - selected diff tool, or that no companion was requested;
 - companion command and viewer-specific instructions, if a companion exists;
 - for split harnesses, the handoff mode and the approval gate: the Plan-to-Work
@@ -327,6 +329,8 @@ Before reporting success, confirm:
   printed companion command;
 - the selected diff integration's verification passed when a companion exists;
 - the selected harness reference's readiness checks passed, if one was read;
+- every role with `effort_applied: "post_launch"` was set and verified by its
+  harness reference before it received a prompt;
 - the UI is focused back on Work when a UI is available; and
 - review benches have not pushed or mutated someone else's branch.
 
