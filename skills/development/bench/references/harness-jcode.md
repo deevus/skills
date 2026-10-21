@@ -11,16 +11,16 @@ Plan-to-Work handoff.
 A Jcode bench is ready only when all of these are true:
 
 1. Every Jcode role runs on the same daemon as the orchestrator.
-2. Plan and Work talk to each other by `swarm` DM.
+2. When both roles exist, Plan and Work talk to each other by `swarm` DM.
 3. Each role's model and effort are verified before it receives a prompt.
 4. A bench with only Jcode roles is fully agent-driven: the orchestrator
    delivers every role prompt.
 5. After setup, the orchestrator steps back.
 
-During the bench, Work starts only after a DM from Plan that says the user
+During a split bench, Work starts only after a DM from Plan that says the user
 approved the plan. Plan and Work may DM each other about clarifications and plan
 changes. A plan change needs fresh user approval, unless the user waived that
-for this bench.
+for this bench. A Work-only bench runs the same approval gate inside Work.
 
 ## Inputs from bench
 
@@ -158,9 +158,12 @@ configured model. Session IDs can change while a tab starts, so read them again
 after startup settles. If a tab still has no unique match, stop and report the
 observed state.
 
-Then call `swarm` with `action=list_swarms` from the orchestrator. Each bench
-session must appear in the list. If one is missing, it is on another daemon:
-stop, because a DM cannot reach it.
+Then confirm every role session is on the shared daemon. With a Jcode
+orchestrator (orchestrated handoff), call `swarm` with `action=list_swarms`:
+each bench session must appear in the list. If one is missing, it is on another
+daemon: stop, because a DM cannot reach it. With a non-Jcode orchestrator
+(human-mediated handoff), `clients:map` on the shared socket must list every
+role session.
 
 Record, for each role: role, friendly name, session ID, swarm ID, tab handle,
 and bench path. Put them in a "Roles and handoff" section of the brief.
@@ -220,14 +223,16 @@ binary, so run `jcode debug` without one.
 
 Fill the templates below and send each one with the `swarm` tool: `action=dm`,
 `delivery=wake`, `to_session=<friendly name>`, and `to_swarm=<swarm ID>`. Send
-Work first, so Work is waiting before Plan can finish.
+Work first, so Work is waiting before Plan can finish. When no Plan role was
+resolved, send only the Work-only DM.
 
-Require a `WORK_READY` DM from Work and a `PLAN_READY` DM from Plan. An accepted
-send does not prove receipt. If an ack does not arrive, check the identity again
-and resend to the corrected session. If it still fails, stop and report the
-observed state, and offer to relaunch the tab with the resolved argv. On a pure
-Jcode bench the handoff stays fully agent-driven, even when the user asks for a
-paste.
+Require a ready ack from every resolved role: `WORK_READY` from Work, and
+`PLAN_READY` from Plan when Plan exists. An accepted send does not prove
+receipt. Wait up to 2 minutes for each ack. If none arrives, check the identity
+again and resend once to the corrected session, then wait 2 more minutes. If it
+still fails, stop waiting, report the observed state, and offer to relaunch the
+tab with the resolved argv. On a pure Jcode bench the handoff stays fully
+agent-driven, even when the user asks for a paste.
 
 The orchestrated handoff needs a Jcode orchestrator on the shared daemon,
 because it uses the `swarm` tool. When the orchestrator is not Jcode, or a role
@@ -246,6 +251,7 @@ is not Jcode, use the core skill's human-mediated handoff.
 | `{approval_gate}`                                | Gate text from the approval gate reference   |
 | `{change_rule}`                                  | Change rule from the approval gate reference |
 
+Take friendly names and swarm IDs from `clients:map`, including your own row.
 Take `{approval_gate}` and `{change_rule}` from the
 [Bench Approval Gate](approval-gate.md) reference, using the gate recorded in
 the brief.
@@ -291,7 +297,9 @@ before any edits. Do not edit project files.
    path, the brief path, the scope, the constraints, and what done means.
 6. DM the Work agent {work_session} (to_swarm={work_swarm},
    delivery=wake). Say that the user approved the plan, and include the
-   {work_prompt} and {plan} paths. Wait for Work to acknowledge.
+   {work_prompt} and {plan} paths. Wait up to 2 minutes for Work to
+   acknowledge. If it does not, resend once. If it still does not, tell the
+   user that Work did not acknowledge the start.
 7. Stay available. Answer Work's questions by DM. A clarification that does
    not change scope, approach, acceptance criteria, or files needs no gate.
    For a plan change, revise {plan} in place and tell Work to wait on the
@@ -299,12 +307,34 @@ before any edits. Do not edit project files.
    approved or rejected. Work implements, you plan.
 ```
 
+### Work-only DM
+
+Use this when the bench has a Work role and no Plan role. Work plans, gets
+approval, and then implements.
+
+```text
+You are the only agent for the bench in {brief}. Read the brief, then plan
+before any edits.
+
+1. DM {orchestrator_session} (to_swarm={orchestrator_swarm}) with WORK_READY
+   and one sentence on the goal. This is your only message to the
+   orchestrator. From now on, ask the user directly.
+2. Investigate the code read-only, then write the plan to {plan}.
+3. {approval_gate}
+4. Address all feedback in {plan} and go back to step 3. If the review is
+   dismissed or empty, stop and ask the user. Silence or a summary is not
+   approval.
+5. After approval, do the work. For a plan change, revise {plan} and get it
+   approved first. {change_rule}
+6. Leave landing, merging, and pushing to the user.
+```
+
 ## Step back
 
-After both acks arrive, report the bench ready to the user and end your turn.
-Plan now owns coordination with the user and Work, and you return only when the
-user asks. Landing the work is the user's decision, so the report ends with the
-bench state, not a landing offer.
+After the ready ack from every resolved role arrives, report the bench ready to
+the user and end your turn. Plan now owns coordination with the user and Work,
+and you return only when the user asks. Landing the work is the user's decision,
+so the report ends with the bench state, not a landing offer.
 
 ## Readiness checks
 
@@ -312,13 +342,15 @@ Add these to the core final verification:
 
 - every Jcode argv launched with the same `--socket`, and `server:info` answered
   on it;
-- every role session appears in `list_swarms` from the orchestrator;
+- every role session is on the shared daemon: in `list_swarms` for a Jcode
+  orchestrator, in `clients:map` for a non-Jcode orchestrator;
 - the brief records each role's identity;
 - each role's model and effort were verified before its DM, with any rejected
   `/effort` recorded as model default;
-- `WORK_READY` and `PLAN_READY` arrived by swarm DM; and
+- for the orchestrated handoff, a ready ack arrived by swarm DM from every
+  resolved role (`WORK_READY`, plus `PLAN_READY` when Plan exists); and
 - on a pure Jcode bench, the orchestrator delivered every role prompt.
 
 Fail closed on an unmatched session, a session on another daemon, a model
 mismatch, an effort that is neither the requested level nor a recorded model
-default, or a missing ack.
+default, or an ack still missing after the resend.
