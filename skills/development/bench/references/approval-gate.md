@@ -54,6 +54,24 @@ question, or a message from another agent does not.
 - Work starts only after Plan tells it the user approved the plan. In the
   human-mediated handoff, that is the prompt the user pastes into Work.
 
+## Present a plan change
+
+The user must see the change before the rest of the plan. Revise the plan file
+in place, at the same path, so Plannotator can diff it against the version the
+user approved. Then put a `## Proposed change` section at the top of the file,
+directly under the title, with:
+
+- **What:** one sentence naming the change.
+- **Why:** who asked and the reason.
+- **Affects:** the steps, files, and acceptance criteria it touches.
+- **Before / after:** the exact lines or step text that change, side by side or
+  as a short diff.
+- **If rejected:** what Work does instead.
+
+Keep the rest of the plan below it, unchanged except for the affected steps.
+After the user decides, replace the section with a one-line record, for example
+`Change approved: type hints added to step 5`.
+
 ## Text for harness templates
 
 Harness references fill two placeholders from this reference.

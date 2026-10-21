@@ -240,16 +240,17 @@ is not Jcode, use the core skill's human-mediated handoff.
 
 ### Placeholders
 
-| Placeholder                                      | Value                                        |
-| ------------------------------------------------ | -------------------------------------------- |
-| `{brief}`                                        | Absolute path of the handoff brief           |
-| `{plan}`                                         | `<brief dir>/<brief stem>-plan.md`           |
-| `{work_prompt}`                                  | `<brief dir>/<brief stem>-work-prompt.md`    |
-| `{plan_session}`, `{plan_swarm}`                 | Plan friendly name and swarm ID              |
-| `{work_session}`, `{work_swarm}`                 | Work friendly name and swarm ID              |
-| `{orchestrator_session}`, `{orchestrator_swarm}` | Orchestrator friendly name and swarm ID      |
-| `{approval_gate}`                                | Gate text from the approval gate reference   |
-| `{change_rule}`                                  | Change rule from the approval gate reference |
+| Placeholder                                      | Value                                                                      |
+| ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `{brief}`                                        | Absolute path of the handoff brief                                         |
+| `{plan}`                                         | `<brief dir>/<brief stem>-plan.md`                                         |
+| `{work_prompt}`                                  | `<brief dir>/<brief stem>-work-prompt.md`                                  |
+| `{plan_session}`, `{plan_swarm}`                 | Plan friendly name and swarm ID                                            |
+| `{work_session}`, `{work_swarm}`                 | Work friendly name and swarm ID                                            |
+| `{orchestrator_session}`, `{orchestrator_swarm}` | Orchestrator friendly name and swarm ID                                    |
+| `{approval_gate}`                                | Gate text from the approval gate reference                                 |
+| `{change_rule}`                                  | Change rule from the approval gate reference                               |
+| `{gate_ref}`                                     | Absolute path of `references/approval-gate.md` in the loaded `bench` skill |
 
 Take friendly names and swarm IDs from `clients:map`, including your own row.
 Take `{approval_gate}` and `{change_rule}` from the
@@ -302,9 +303,10 @@ before any edits. Do not edit project files.
    user that Work did not acknowledge the start.
 7. Stay available. Answer Work's questions by DM. A clarification that does
    not change scope, approach, acceptance criteria, or files needs no gate.
-   For a plan change, revise {plan} in place and tell Work to wait on the
-   affected part. {change_rule} Tell Work by DM after the change is
-   approved or rejected. Work implements, you plan.
+   For a plan change, revise {plan} in place with a `## Proposed change`
+   section at the top, as "Present a plan change" in {gate_ref} describes,
+   and tell Work to wait on the affected part. {change_rule} Tell Work by DM
+   after the change is approved or rejected. Work implements, you plan.
 ```
 
 ### Work-only DM
@@ -324,8 +326,9 @@ before any edits.
 4. Address all feedback in {plan} and go back to step 3. If the review is
    dismissed or empty, stop and ask the user. Silence or a summary is not
    approval.
-5. After approval, do the work. For a plan change, revise {plan} and get it
-   approved first. {change_rule}
+5. After approval, do the work. For a plan change, revise {plan} with a
+   `## Proposed change` section at the top, as "Present a plan change" in
+   {gate_ref} describes, and get it approved first. {change_rule}
 6. Leave landing, merging, and pushing to the user.
 ```
 
