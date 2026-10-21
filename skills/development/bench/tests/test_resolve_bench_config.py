@@ -771,6 +771,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.addCleanup(server.close)
         server.bind(str(path))
+        server.listen()
         return path
 
     def write_jcode_split(self, plan_command: str = '["jcode", "--cwd", "."]') -> None:
@@ -868,6 +869,18 @@ class ResolveBenchConfigTests(unittest.TestCase):
         self.assertEqual(result["diff"]["tool"], "comview")
         for item in result["harnesses"]:
             self.assertEqual(item["argv"][1:3], ["--socket", str(sock)])
+
+    def test_jcode_socket_rejects_a_stale_socket_file(self) -> None:
+        self.executables.add("jcode")
+        self.write_jcode_split()
+        directory = pathlib.Path(tempfile.mkdtemp(prefix="bj", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, directory, True)
+        stale = directory / "stale.sock"
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(str(stale))
+        server.close()
+
+        self.assert_config_error("not accepting connections", "--jcode-socket", str(stale))
 
     def test_jcode_socket_with_harness_override_skips_non_jcode_role(self) -> None:
         sock = self.make_socket()

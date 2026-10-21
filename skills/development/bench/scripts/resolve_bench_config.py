@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import shutil
+import socket
 import stat
 import string
 import sys
@@ -483,6 +484,16 @@ def require_jcode_socket(value: str) -> pathlib.Path:
         raise ConfigError(f"--jcode-socket does not exist: {value}") from exc
     if not stat.S_ISSOCK(mode):
         raise ConfigError(f"--jcode-socket is not a Unix socket: {value}")
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        probe.settimeout(2)
+        probe.connect(str(path))
+    except OSError as exc:
+        raise ConfigError(
+            f"--jcode-socket is not accepting connections: {value}"
+        ) from exc
+    finally:
+        probe.close()
     return path
 
 

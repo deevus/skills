@@ -276,5 +276,6 @@ conflicting, including:
 - `permission_mode` with Codex, Pi, Ask, or a custom command;
 - unsupported placeholders such as `{ticket}`;
 - missing executables for configured harnesses or explicit diff viewers;
-- a `--jcode-socket` path that is relative, missing, or not a socket; and
+- a `--jcode-socket` path that is relative, missing, not a socket, or not
+  accepting connections; and
 - `--jcode-socket` with a Jcode command that already sets `--socket`.
