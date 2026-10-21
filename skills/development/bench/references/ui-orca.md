@@ -13,7 +13,8 @@ This reference applies when `ORCA_TERMINAL_HANDLE` is set. Run the executable in
 - bench path;
 - short workspace title;
 - ordered harness tab specs;
-- optional companion title plus companion command.
+- optional companion title plus companion command;
+- `pinned`: pin the bench worktree in the Orca sidebar when true.
 
 Each harness tab spec contains:
 
@@ -53,12 +54,16 @@ this reference. Treat the companion as a generic terminal command.
    checkout has no terminals. If `totalCount` is not 0, stop and return to
    `bench` with the observed state. Do not restructure a bench that may be in
    use.
-4. Label the worktree:
+4. Label the worktree, and pin it when `pinned` is true:
 
    ```bash
    orca worktree set --worktree path:<bench-path> \
-     --display-name "<short title>" --json
+     --display-name "<short title>" [--pin] --json
    ```
+
+   `--pin` needs an Orca CLI that has it (stablyai/orca#20384). If the CLI
+   rejects `--pin`, rerun without it and report "pin not supported by this Orca
+   version".
 
 5. Create harness tabs in the order supplied by `bench`:
 
@@ -98,7 +103,9 @@ current Orca worktree instead, and keep the `cd <bench>` prefix so each command
 still runs in the bench:
 
 1. Skip steps 3 and 4. The current worktree already has your own terminal, and
-   its display name belongs to that worktree.
+   its display name belongs to that worktree. Skip pinning too, because pinning
+   the current worktree would pin the wrong thing. When `pinned` is true, report
+   "pin skipped: bench is not an Orca worktree".
 2. Create each tab without `--worktree`, so Orca uses the current worktree:
 
    ```bash
@@ -130,6 +137,8 @@ Before reporting success:
   clean start;
 - if a companion exists, read its tab and confirm the command started;
 - confirm Work, Plan, and companion use separate tabs, not split panes;
+- when `pinned` was applied, confirm `isPinned` is true in
+  `orca worktree show --worktree path:<bench-path> --json`;
 - confirm focus returned to Work; and
 - fail closed on missing tabs, unexpected existing terminals in a listed bench
   worktree, or a half-specified companion.

@@ -271,8 +271,12 @@ command -v supacode >/dev/null && echo supacode || echo no-supacode
 - Else use native terminals when available and do not read a UI reference.
 
 Every UI path receives the same inputs: bench path, short title, ordered harness
-tab specs, and an optional companion title plus command. UI references must not
-detect viewers, construct viewer commands, or add review semantics.
+tab specs, an optional companion title plus command, and `pinned` from the
+resolver's `ui.pinned`. UI references must not detect viewers, construct viewer
+commands, or add review semantics. A UI that cannot pin reports "pin not
+supported by `<UI>`" when `pinned` is true and carries on. That is not a failure.
+The setup report states the pin outcome: pinned, skipped with the reason, or not
+requested.
 
 ## Native terminal fallback
 

@@ -25,7 +25,8 @@ DIFF_TOOLS = frozenset({"auto", "comview", "hunk", "none"})
 HARNESS_KEYS = frozenset({"tool", "permission_mode", "prompt", "command", "effort"})
 ROLE_HARNESS_KEYS = HARNESS_KEYS | frozenset({"role", "title", "enabled"})
 DIFF_KEYS = frozenset({"tool"})
-TOP_LEVEL_KEYS = frozenset({"harness", "harnesses", "diff"})
+UI_KEYS = frozenset({"pinned"})
+TOP_LEVEL_KEYS = frozenset({"harness", "harnesses", "diff", "ui"})
 # Reasoning-effort levels each preset accepts at launch, from its --help.
 PRESET_EFFORTS = {
     "claude": ("low", "medium", "high", "xhigh", "max"),
@@ -58,10 +59,16 @@ class DiffConfig:
 
 
 @dataclasses.dataclass
+class UiConfig:
+    pinned: bool = False
+
+
+@dataclasses.dataclass
 class BenchConfig:
     harnesses: dict[str, HarnessConfig] = dataclasses.field(default_factory=dict)
     disabled_roles: set[str] = dataclasses.field(default_factory=set)
     diff: DiffConfig = dataclasses.field(default_factory=DiffConfig)
+    ui: UiConfig = dataclasses.field(default_factory=UiConfig)
 
 
 def user_config_path() -> pathlib.Path:
@@ -125,6 +132,22 @@ def merge_layer(config: BenchConfig, data: dict[str, Any], *, source: str) -> No
         if not isinstance(diff, dict):
             raise ConfigError(f"[diff] in {source} must be a table")
         merge_diff_layer(config.diff, diff, source=source)
+
+    ui = data.get("ui")
+    if ui is not None:
+        if not isinstance(ui, dict):
+            raise ConfigError(f"[ui] in {source} must be a table")
+        merge_ui_layer(config.ui, ui, source=source)
+
+
+def merge_ui_layer(config: UiConfig, data: dict[str, Any], *, source: str) -> None:
+    unknown_keys = set(data) - UI_KEYS
+    if unknown_keys:
+        raise ConfigError(f"Unknown key in [ui] in {source}: {format_key_list(unknown_keys)}")
+    if "pinned" in data:
+        if not isinstance(data["pinned"], bool):
+            raise ConfigError(f"ui.pinned in {source} must be a boolean")
+        config.pinned = data["pinned"]
 
 
 def parse_role_harness_entries(
@@ -558,6 +581,7 @@ def resolve_config(
     diff_tool: str | None = None,
     work_effort: str | None = None,
     plan_effort: str | None = None,
+    pinned: bool | None = None,
     which: Callable[[str], str | None] | None = None,
 ) -> dict[str, Any]:
     which = shutil.which if which is None else which
@@ -590,12 +614,16 @@ def resolve_config(
             raise ConfigError(f"Unsupported --diff-tool: {diff_tool}")
         config.diff.tool = diff_tool
 
+    if pinned is not None:
+        config.ui.pinned = pinned
+
     harnesses = resolved_harnesses(config, brief=brief, which=which)
     work = next(item for item in harnesses if item["role"] == "work")
     return {
         "harness": work,
         "harnesses": harnesses,
         "diff": resolve_diff(config.diff, which=which),
+        "ui": {"pinned": config.ui.pinned},
     }
 
 
@@ -632,6 +660,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--plan-effort",
         help="reasoning effort for the Plan harness for this request",
     )
+    parser.add_argument(
+        "--pinned",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="pin (or with --no-pinned, do not pin) the bench workspace for this request",
+    )
     return parser.parse_args(argv)
 
 
@@ -645,6 +679,7 @@ def execute(argv: Sequence[str]) -> str:
         diff_tool=args.diff_tool,
         work_effort=args.effort,
         plan_effort=args.plan_effort,
+        pinned=args.pinned,
     )
     return json.dumps(resolved, indent=2, sort_keys=True) + "\n"
 

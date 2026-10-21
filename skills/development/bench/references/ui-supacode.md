@@ -35,7 +35,7 @@ Use the multi-harness path when `bench` returns `harnesses`:
 BENCH_PATH="<bench-path>" # --path, e.g. /Users/me/Projects/project-task-123
 SHORT_TITLE="<short title>" # --title, e.g. "TASK-123 · parser fix"
 COLOUR="<colour>" # --color, e.g. blue
-PIN_ARGS=() # Optional --pin; use PIN_ARGS=(--pin) to pin the new worktree.
+PIN_ARGS=() # From the resolver's ui.pinned: use PIN_ARGS=(--pin) when it is true.
 
 HARNESS_TABS_JSON='[
   {
@@ -117,6 +117,8 @@ A successful call prints one JSON object. Use these fields:
 
 - `harness_tabs[].shell_pid` and `companion_shell_pid`: verify each shell's cwd
   as described below. `companion_shell_pid` is null when there is no companion.
+- `pinned`: true when the sidecar pinned the worktree. Report it as the pin
+  outcome.
 - `closed_restored_tabs`: report any stale restored tab ids that setup closed in
   the bench result summary.
 

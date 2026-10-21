@@ -12,7 +12,9 @@ This reference applies when `HERDR_ENV=1`.
 - bench path;
 - short workspace title;
 - ordered harness tab specs;
-- optional companion title plus companion command.
+- optional companion title plus companion command;
+- `pinned`: Herdr has no pin control. When it is true, report "pin not
+  supported by Herdr" and continue.
 
 Each harness tab spec contains:
 
