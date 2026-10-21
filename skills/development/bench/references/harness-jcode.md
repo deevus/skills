@@ -28,8 +28,10 @@ for this bench. A Work-only bench runs the same approval gate inside Work.
 - bench path and brief path;
 - the ordered harness tab specs from the resolver;
 - the UI route and its tab or terminal handles; and
-- the configured model and effort for each role, from user configuration or
-  memory. Jcode has no effort launch flag and the resolver has no effort key.
+- the expected effort for each role: the resolver's `effort` field. Jcode has no
+  effort launch flag, so the resolver reports it with
+  `effort_applied: "post_launch"` and this reference applies it. When `effort`
+  is `null`, the role runs on the model default.
 
 ## Prerequisites
 
@@ -171,8 +173,9 @@ and bench path. Put them in a "Roles and handoff" section of the brief.
 
 ## Verify model and effort
 
-Do this for each role before you send it any DM. Model and effort values come
-from the inputs, not from this reference.
+Do this for each role before you send it any DM. The expected model comes from
+the role's launch argv. The expected effort is the resolver's `effort` field for
+that role.
 
 1. Read the live values:
 
@@ -196,12 +199,13 @@ from the inputs, not from this reference.
    A provider-qualified ID opens the model picker instead. Close it with
    `client:keys:esc` and send the bare ID.
 
-4. To set effort:
+4. When the role's `effort_applied` is `post_launch`, set its `effort`:
 
    ```bash
-   jcode debug --socket <socket> --session <id> 'client:message:/effort <level>'
+   jcode debug --socket <socket> --session <id> 'client:message:/effort <effort>'
    ```
 
+   When `effort` is `null`, skip this step and record "effort: model default".
    Some models reject `/effort` with "reasoning effort is not supported". Then
    the model default is the expected effort for that role: record "effort: model
    default, `/effort` rejected" in the brief and the setup report, and continue.

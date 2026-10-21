@@ -48,6 +48,7 @@ The legacy `[harness]` table remains valid. It means the Work harness.
 [harness]
 tool = "claude" # ask | claude | codex | pi
 permission_mode = "plan"
+effort = "high" # optional reasoning effort, see Effort below
 prompt = "Read {brief}, then plan before edits."
 # command = ["custom-agent", "--instructions", "{brief}"]
 
@@ -80,6 +81,25 @@ tool = "comview"
 
 Jcode harnesses use a custom command with no `prompt`. See
 [Bench Harness Jcode](harness-jcode.md) for the command shape.
+
+### Effort
+
+`effort` sets the reasoning effort for that role. It is optional, and each
+role can have its own, for example `effort = "high"` on Plan and
+`effort = "medium"` on Work.
+
+| Harness | Rendered at launch | Accepted levels |
+| --- | --- | --- |
+| `claude` | `--effort <level>` | low, medium, high, xhigh, max |
+| `codex` | `-c model_reasoning_effort="<level>"` | minimal, low, medium, high, xhigh |
+| `pi` | `--thinking <level>` | off, minimal, low, medium, high, xhigh, max |
+| custom `command` | nothing; reported as `post_launch` | not checked |
+
+For presets the resolver checks the level and puts the flag in the argv. For a
+custom command the resolver cannot know the flag, so it leaves the argv alone
+and reports the level. The matching harness reference applies it after launch.
+For Jcode that is `/effort <level>`, see
+[Bench Harness Jcode](harness-jcode.md).
 
 Defaults:
 
@@ -117,7 +137,8 @@ enabled = false
 ```
 
 `enabled = false` removes that role from the final harness map. It cannot be
-combined with `tool`, `command`, `prompt`, `permission_mode`, or `title`.
+combined with `tool`, `command`, `prompt`, `permission_mode`, `effort`, or
+`title`.
 Disabling Work is an error unless an explicit Work override is supplied for the
 current run.
 
@@ -128,6 +149,9 @@ current run.
   treated as a shell command.
 - A higher-precedence `tool` clears inherited `command` and `permission_mode`.
 - A higher-precedence `command` clears inherited `tool` and `permission_mode`.
+- `effort` is a per-role intent. It layers on its own and survives a `tool` or
+  `command` change in a higher layer or an explicit harness flag. A layer that
+  omits `effort` keeps the inherited value.
 - In legacy `[harness]`, `prompt` layers independently and defaults when
   omitted.
 - In `[[harnesses]]`, each role entry resets that role's prompt. Provide
@@ -138,20 +162,21 @@ current run.
 - Codex and Pi reject `permission_mode`; use `command` for custom flags.
 - Configured preset and custom harness executables must exist on `PATH`.
 
-Rendered presets with a prompt:
+Rendered presets with a prompt (each `[effort flag]` appears only when
+`effort` is set):
 
 ```text
-claude --permission-mode <mode> <prompt>
-codex <prompt>
-pi @<brief> <prompt>
+claude --permission-mode <mode> [--effort <level>] <prompt>
+codex [-c model_reasoning_effort="<level>"] <prompt>
+pi [--thinking <level>] @<brief> <prompt>
 ```
 
 Rendered presets without a prompt:
 
 ```text
-claude --permission-mode <mode>
-codex
-pi
+claude --permission-mode <mode> [--effort <level>]
+codex [-c model_reasoning_effort="<level>"]
+pi [--thinking <level>]
 ```
 
 Custom commands substitute `{brief}` in argv elements. The resolver appends the
@@ -165,6 +190,9 @@ rendered prompt as the final argv item only when that harness role has a prompt.
   request.
 - `--diff-tool auto|comview|hunk|none` selects or overrides the diff viewer for
   this request.
+- `--effort <level>` and `--plan-effort <level>` set or override the effort for
+  Work and Plan for this request. They need that role to exist, and the same
+  per-harness checks apply.
 
 The resolver knows no harness-specific launch flags. A harness reference that
 needs per-run argv, such as the Jcode daemon socket, adds it to the resolved
@@ -196,12 +224,22 @@ name (`claude`, `codex`, or `pi`), the executable basename of a custom command
 (`jcode` for both `jcode` and `/usr/local/bin/jcode`), or `null` while a
 selection is required.
 
+Each harness also has `effort`, the configured level or `null`, and
+`effort_applied`:
+
+- `"argv"`: the resolver rendered it into the launch command;
+- `"post_launch"`: a custom command, so the harness reference must apply it
+  after launch;
+- `null`: no effort is configured.
+
 ```json
 {
   "harness": {
     "role": "work",
     "title": "Work",
     "family": "pi",
+    "effort": null,
+    "effort_applied": null,
     "tool": "pi",
     "argv": ["pi", "@/tmp/bench-brief.md", "Read ..."],
     "available": ["claude", "codex", "pi"],
@@ -212,8 +250,10 @@ selection is required.
       "role": "plan",
       "title": "Plan",
       "family": "claude",
+      "effort": "high",
+      "effort_applied": "argv",
       "tool": "claude",
-      "argv": ["claude", "--permission-mode", "plan", "Read ..."],
+      "argv": ["claude", "--permission-mode", "plan", "--effort", "high", "Read ..."],
       "available": ["claude", "codex", "pi"],
       "selection_required": false
     },
@@ -221,6 +261,8 @@ selection is required.
       "role": "work",
       "title": "Work",
       "family": "pi",
+      "effort": null,
+      "effort_applied": null,
       "tool": "custom",
       "argv": ["pi", "--model", "openai-codex/gpt-5.6-astra"],
       "available": ["claude", "codex", "pi"],
@@ -274,5 +316,7 @@ conflicting, including:
 - unsupported tools or Claude permission modes;
 - `tool` combined with `command` in one harness table;
 - `permission_mode` with Codex, Pi, Ask, or a custom command;
+- an `effort` level the preset does not accept, or `--effort` or
+  `--plan-effort` for a role that is not configured;
 - unsupported placeholders such as `{ticket}`;
 - missing executables for configured harnesses or explicit diff viewers.
