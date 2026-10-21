@@ -122,6 +122,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
                     "available": [],
                     "selection_required": False,
                 },
+                "ui": {"pinned": False},
             },
         )
 
@@ -1010,6 +1011,71 @@ class ResolveBenchConfigTests(unittest.TestCase):
         self.assertEqual(plan["effort"], "xhigh")
         self.assertEqual(work["effort"], "medium")
         self.assertEqual(work["argv"][3:5], ["--effort", "medium"])
+
+    # Bench workspace UI settings.
+
+    def test_ui_pinned_defaults_to_false(self) -> None:
+        result = self.resolve()
+
+        self.assertEqual(result["ui"], {"pinned": False})
+
+    def test_ui_pinned_layers_repo_over_user(self) -> None:
+        self.write_user(
+            """
+            [ui]
+            pinned = true
+            """
+        )
+        with self.subTest(layer="user"):
+            self.assertTrue(self.resolve()["ui"]["pinned"])
+        self.write_repo(
+            """
+            [ui]
+            pinned = false
+            """
+        )
+        with self.subTest(layer="repo"):
+            self.assertFalse(self.resolve()["ui"]["pinned"])
+
+    def test_ui_pinned_must_be_boolean(self) -> None:
+        self.write_user(
+            """
+            [ui]
+            pinned = "yes"
+            """
+        )
+        self.assert_config_error("ui.pinned")
+
+    def test_ui_rejects_unknown_keys(self) -> None:
+        self.write_user(
+            """
+            [ui]
+            colour = "blue"
+            """
+        )
+        self.assert_config_error("Unknown key in \\[ui\\]")
+
+    def test_ui_must_be_a_table(self) -> None:
+        self.write_user('ui = "pinned"')
+        self.assert_config_error("\\[ui\\] in .* must be a table")
+
+    def test_pinned_request_flags_override_config(self) -> None:
+        self.write_user(
+            """
+            [ui]
+            pinned = true
+            """
+        )
+        with self.subTest(flag="--no-pinned"):
+            self.assertFalse(self.resolve("--no-pinned")["ui"]["pinned"])
+        self.write_user(
+            """
+            [ui]
+            pinned = false
+            """
+        )
+        with self.subTest(flag="--pinned"):
+            self.assertTrue(self.resolve("--pinned")["ui"]["pinned"])
 
 if __name__ == "__main__":
     unittest.main()
