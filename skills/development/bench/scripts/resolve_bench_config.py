@@ -494,8 +494,8 @@ def apply_jcode_socket(harnesses: list[dict[str, Any]], socket_path: pathlib.Pat
         argv = harness["argv"]
         if any(arg == "--socket" or arg.startswith("--socket=") for arg in argv[1:]):
             raise ConfigError(
-                f"{harness['role']} harness command already sets --socket; "
-                "remove it or omit --jcode-socket"
+                f"{harness['role']} harness command already sets --socket. "
+                "Remove it or omit --jcode-socket."
             )
         argv[1:1] = ["--socket", str(socket_path)]
 

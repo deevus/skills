@@ -77,20 +77,8 @@ command = ["pi", "--model", "openai-codex/gpt-5.6-astra"]
 tool = "comview"
 ```
 
-Jcode harnesses use a custom command with no `prompt`, because Jcode takes no
-startup prompt argument. See [Bench Harness Jcode](harness-jcode.md).
-
-```toml
-[[harnesses]]
-role = "plan"
-title = "Plan"
-command = ["jcode", "--cwd", ".", "--provider", "claude", "--model", "<model>"]
-
-[[harnesses]]
-role = "work"
-title = "Work"
-command = ["jcode", "--cwd", ".", "--provider", "claude", "--model", "<model>"]
-```
+Jcode harnesses use a custom command with no `prompt`. See
+[Bench Harness Jcode](harness-jcode.md) for the command shape.
 
 Defaults:
 
@@ -257,8 +245,8 @@ prompt only when one is configured.
 
 The first split-harness workflow is human-mediated. Plan starts with its
 configured prompt. Work can start with no prompt as an empty interactive agent.
-The Plan prompt should tell the Plan agent to write the plan, stop for approval,
-and then produce the exact prompt that the human should paste into Work.
+The Plan prompt tells the Plan agent to write the plan, stop for approval, and
+then produce the exact prompt that the human should paste into Work.
 
 A harness reference can replace that with an orchestrated handoff. Jcode
 benches do: see [Bench Harness Jcode](harness-jcode.md).

@@ -10,11 +10,11 @@ Plan-to-Work handoff.
 
 A Jcode bench is ready only when all of these are true:
 
-1. Every Jcode role runs on the same daemon as the other roles.
-2. Plan and Work talk to each other with the `swarm` tool. Never use
-   `jcode debug` or UI terminal-send for messages between roles.
+1. Every Jcode role runs on the same daemon as the orchestrator.
+2. Plan and Work talk to each other by `swarm` DM.
 3. Each role's model and effort are verified before it receives a prompt.
-4. A bench with only Jcode roles needs no human paste.
+4. A bench with only Jcode roles is fully agent-driven: the orchestrator
+   delivers every role prompt.
 5. After setup, the orchestrator steps back.
 
 During the bench, Work starts only after a DM from Plan that says the user
@@ -47,7 +47,7 @@ title = "Work"
 command = ["jcode", "--cwd", ".", "--provider", "<provider>", "--model", "<model>"]
 ```
 
-Do not put `--socket` in the configuration. Bench picks the socket for each run.
+Leave `--socket` out of the configuration. Bench picks the socket for each run.
 
 ## Pick the shared daemon socket
 
@@ -72,7 +72,7 @@ the handoff. Always pass one socket for all roles.
 4. If the orchestrator is not Jcode, use the only live entry. If there is more
    than one, ask the user which server to use. If there is none, stop and tell
    the user to start one with `jcode serve`.
-5. Do not trust the default socket path from inside a session. `TMPDIR` can
+5. Always take the socket from `servers.json`. Inside a session, `TMPDIR` can
    point at the session scratch directory, so the default path can be stale.
 
 Rerun the resolver with `--jcode-socket <socket>`, plus every earlier explicit
@@ -94,13 +94,15 @@ Use these matches, in order:
 1. Unique `working_dir` equal to the bench path, when only one role runs in that
    path.
 2. The epoch-ms in `session_<name>_<epoch_ms>_...` against the start time of
-   each tab's `jcode` child process (`ps -o lstart= -p <pid>`). Processes that
-   start in the same second cannot be separated this way.
+   each tab's `jcode` process. Find it from the UI's shell pid with
+   `pgrep -P <shell_pid> jcode`, then read `ps -o lstart= -p <pid>`. Processes
+   that start in the same second cannot be separated this way.
 3. The tab title. Jcode sets it to the session's friendly name.
 
-Do not infer identity from launch order or from the configured model. Session
-IDs can change while a tab starts, so read them again after startup settles. If
-a tab still has no unique match, stop and report the observed state.
+Identity comes only from these matches, never from launch order or the
+configured model. Session IDs can change while a tab starts, so read them again
+after startup settles. If a tab still has no unique match, stop and report the
+observed state.
 
 Then call `swarm` with `action=list_swarms` from the orchestrator. Each bench
 session must appear in the list. If one is missing, it is on another daemon:
@@ -142,18 +144,25 @@ from the inputs, not from this reference.
    jcode debug --socket <socket> --session <id> 'client:message:/effort <level>'
    ```
 
-   Some models reject `/effort`. Report that and continue on the model default.
+   Some models reject `/effort` with "reasoning effort is not supported". Then
+   the model default is the expected effort for that role: record "effort: model
+   default, `/effort` rejected" in the brief and the setup report, and continue.
 
-5. Read `client:frame` again. Continue only when the model and effort match.
+5. Read `client:frame` again. Continue when the model matches and the effort is
+   the requested level or the recorded model default.
 
 These commands need `display.debug_socket = true` in `~/.jcode/config.toml`.
-Debug control is local session control. Do not enable it on a machine without
-the user's authorization. They set client state only. They never deliver the
-role prompt.
+Debug control is local session control, so enable it only with the user's
+authorization. Use it for client state: model, effort, and pickers. Role
+instructions travel by swarm DM.
+
+Without a debug socket, send the same slash commands through the UI's
+terminal-send command, then read the tab footer to verify.
 
 If a session is busy, pause it first: send `client:message:/poke off`, cancel,
 and wait for idle. Auto-poke can restart a cancelled task. `jcode debug state`
-can hang on a busy session, so prefer `client:frame`.
+can hang on a busy session, so prefer `client:frame`. macOS has no `timeout`
+binary, so run `jcode debug` without one.
 
 ## Deliver role instructions
 
@@ -162,18 +171,15 @@ Fill the templates below and send each one with the `swarm` tool: `action=dm`,
 Work first, so Work is waiting before Plan can finish.
 
 Require a `WORK_READY` DM from Work and a `PLAN_READY` DM from Plan. An accepted
-send does not prove receipt. If an ack does not arrive, check the identity
-again. Do not ask the user to paste a prompt into a pure Jcode bench. Stop and
-report the observed state instead.
+send does not prove receipt. If an ack does not arrive, check the identity again
+and resend to the corrected session. If it still fails, stop and report the
+observed state, and offer to relaunch the tab with the resolved argv. On a pure
+Jcode bench the handoff stays fully agent-driven, even when the user asks for a
+paste.
 
-The core skill's paste handoff applies only when a role is not Jcode.
-
-A non-Jcode orchestrator has no `swarm` tool. It sends the two role DMs with
-`jcode debug --socket <socket> --session <id> --wait message '<text>'` instead,
-and reads the `WORK_READY` and `PLAN_READY` replies from the command output.
-Replace the "DM the orchestrator" steps with "reply with". The attached tab does
-not redraw an injected message until its next interaction, so tell the user that
-the tab can look empty. Plan and Work still use `swarm` DMs.
+The orchestrated handoff needs a Jcode orchestrator on the shared daemon,
+because it uses the `swarm` tool. When the orchestrator is not Jcode, or a role
+is not Jcode, use the core skill's human-mediated handoff.
 
 ### Placeholders
 
@@ -194,9 +200,10 @@ Otherwise use: "Show the user `{plan}` and wait for an explicit approval
 message."
 
 Set `{change_rule}` to: "A plan change needs the user's approval through the
-same gate." If the user said that Plan may approve changes itself on this bench,
-use: "The user waived approval for plan changes on this bench. Record each
-change in `{plan}`." Record the waiver in the brief.
+same gate. Urgency or 'keep moving' is not a waiver." If the user explicitly
+said that Plan may approve changes itself on this bench, use: "The user waived
+approval for plan changes on this bench. Record each change in `{plan}`." Record
+the waiver in the brief.
 
 ### Work DM
 
@@ -214,10 +221,11 @@ wait. Do not edit files yet.
 3. When the start DM arrives, acknowledge it to {plan_session}. Then read
    {work_prompt} and the approved plan {plan}, and do the work.
 4. If something is unclear, or the plan needs to change, DM {plan_session}
-   and wait for the answer. Do not apply a plan change until Plan confirms
-   that it is approved.
+   and wait for the answer. Keep working on parts the question does not
+   touch. Apply a plan change only after Plan confirms it is approved.
 5. When done, DM {plan_session} with the outcome and where the results are.
-   Do not land, merge, or push unless the work prompt says so.
+   Leave landing, merging, and pushing to the user unless the work prompt
+   says otherwise.
 ```
 
 ### Plan DM
@@ -241,19 +249,17 @@ before any edits. Do not edit project files.
    {work_prompt} and {plan} paths. Wait for Work to acknowledge.
 7. Stay available. Answer Work's questions by DM. A clarification that does
    not change scope, approach, acceptance criteria, or files needs no gate.
-   For a plan change, revise {plan} in place. {change_rule} Tell Work by DM
-   only after the change is approved. Do not implement.
+   For a plan change, revise {plan} in place and tell Work to wait on the
+   affected part. {change_rule} Tell Work by DM after the change is
+   approved or rejected. Work implements, you plan.
 ```
 
 ## Step back
 
-After both acks arrive, report the bench ready to the user and stop. Plan now
-coordinates with the user and Work.
-
-- Do not poll, monitor, or relay messages.
-- Do not re-verify reports from the bench agents.
-- Do not offer to land the work. Landing is the user's decision.
-- Resume only when the user asks.
+After both acks arrive, report the bench ready to the user and end your turn.
+Plan now owns coordination with the user and Work, and you return only when the
+user asks. Landing the work is the user's decision, so the report ends with the
+bench state, not a landing offer.
 
 ## Readiness checks
 
@@ -262,9 +268,11 @@ Add these to the core final verification:
 - every Jcode argv has the same `--socket`;
 - every role session appears in `list_swarms` from the orchestrator;
 - the brief records each role's identity;
-- each role's model and effort were verified before its DM;
+- each role's model and effort were verified before its DM, with any rejected
+  `/effort` recorded as model default;
 - `WORK_READY` and `PLAN_READY` arrived by swarm DM; and
-- no human paste was needed when every role is Jcode.
+- on a pure Jcode bench, the orchestrator delivered every role prompt.
 
-Fail closed on an unmatched session, a session on another daemon, a model or
-effort mismatch, or a missing ack.
+Fail closed on an unmatched session, a session on another daemon, a model
+mismatch, an effort that is neither the requested level nor a recorded model
+default, or a missing ack.

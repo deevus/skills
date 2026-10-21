@@ -869,6 +869,18 @@ class ResolveBenchConfigTests(unittest.TestCase):
         for item in result["harnesses"]:
             self.assertEqual(item["argv"][1:3], ["--socket", str(sock)])
 
+    def test_jcode_socket_with_harness_override_skips_non_jcode_role(self) -> None:
+        sock = self.make_socket()
+        self.executables.update({"jcode", "pi"})
+        self.write_jcode_split()
+
+        result = self.resolve("--jcode-socket", str(sock), "--harness-tool", "pi")
+
+        plan, work = result["harnesses"]
+        self.assertEqual(plan["argv"][1:3], ["--socket", str(sock)])
+        self.assertEqual(work["family"], "pi")
+        self.assertNotIn("--socket", work["argv"])
+
 
 if __name__ == "__main__":
     unittest.main()
