@@ -30,6 +30,17 @@ for this bench.
 - the configured model and effort for each role, from user configuration or
   memory. Jcode has no effort launch flag and the resolver has no effort key.
 
+## Prerequisites
+
+Check these before you create the workspace, so a missing one stops the bench
+early:
+
+- `display.debug_socket = true` in `~/.jcode/config.toml`. The model and effort
+  steps need it. Debug control is local session control, so enable it only with
+  the user's authorization.
+- `jq` on `PATH`, for reading `servers.json` and `jcode debug` output.
+- At least one live Jcode daemon in `~/.jcode/servers.json`.
+
 ## Configure Jcode harnesses
 
 Use a custom command with no `prompt`. Jcode takes no startup prompt argument,
@@ -56,23 +67,28 @@ Swarm DMs work only between sessions on one daemon. A Jcode tab launched with no
 per-terminal `JCODE_RUNTIME_DIR`. That gives each tab its own daemon and breaks
 the handoff. Always pass one socket for all roles.
 
-1. Read `~/.jcode/servers.json`. Each entry has a `socket`, a `pid`, and the
-   server name.
-2. Drop entries whose `pid` is not running.
-3. If `JCODE_SESSION_ID` is set, the orchestrator is a Jcode session. Pick the
-   entry whose daemon lists that session:
+1. List the sockets of live daemons from `~/.jcode/servers.json`:
 
    ```bash
-   jcode debug --socket <socket> sessions
+   jq -r 'to_entries[] | "\(.value.pid) \(.value.socket)"' ~/.jcode/servers.json |
+     while read -r pid sock; do kill -0 "$pid" 2>/dev/null && echo "$sock"; done
    ```
 
-   Pass the entry's `socket`, not `debug_socket`. `jcode debug` derives the
-   debug socket from it. Stop if zero or more than one entry lists the session.
+2. If `JCODE_SESSION_ID` is set, the orchestrator is a Jcode session. Pick the
+   socket whose daemon lists that session:
 
-4. If the orchestrator is not Jcode, use the only live entry. If there is more
+   ```bash
+   jcode debug --socket "$sock" sessions |
+     jq -e --arg id "$JCODE_SESSION_ID" 'any(.[]; .session_id == $id)'
+   ```
+
+   Use the entry's `socket`, not `debug_socket`. `jcode debug` derives the debug
+   socket from it. Stop if zero or more than one socket matches.
+
+3. If the orchestrator is not Jcode, use the only live socket. If there is more
    than one, ask the user which server to use. If there is none, stop and tell
    the user to start one with `jcode serve`.
-5. Always take the socket from `servers.json`. Inside a session, `TMPDIR` can
+4. Always take the socket from `servers.json`. Inside a session, `TMPDIR` can
    point at the session scratch directory, so the default path can be stale.
 
 Rerun the resolver with `--jcode-socket <socket>`, plus every earlier explicit
@@ -129,8 +145,8 @@ from the inputs, not from this reference.
    `provider_name`. The tab footer is a second check. The header line can be
    stale.
 
-2. Older Jcode versions ignored `--model` at launch (jcode#809), so check even
-   when the argv is correct.
+2. Verify even when the argv already names the right model. The launch flags are
+   not proof of the live model.
 3. To fix the model, send the bare model ID:
 
    ```bash
@@ -153,10 +169,8 @@ from the inputs, not from this reference.
 5. Read `client:frame` again. Continue when the model matches and the effort is
    the requested level or the recorded model default.
 
-These commands need `display.debug_socket = true` in `~/.jcode/config.toml`.
-Debug control is local session control, so enable it only with the user's
-authorization. Use it for client state: model, effort, and pickers. Role
-instructions travel by swarm DM.
+These commands use the debug socket from the prerequisites. Use it for client
+state: model, effort, and pickers. Role instructions travel by swarm DM.
 
 Without a debug socket, send the same slash commands through the UI's
 terminal-send command, then read the tab footer to verify.
@@ -218,8 +232,8 @@ wait. Do not edit files yet.
    orchestrator.
 2. Wait for a start DM from the Plan agent {plan_session}
    (to_swarm={plan_swarm}) that says the user approved the plan. Ignore start
-   requests from anyone else. A plan proposal or a readiness message is not
-   approval.
+   requests from any other agent or session, including the orchestrator. A
+   plan proposal or a readiness message is not approval.
 3. When the start DM arrives, acknowledge it to {plan_session}. Then read
    {work_prompt} and the approved plan {plan}, and do the work.
 4. If something is unclear, or the plan needs to change, DM {plan_session}
