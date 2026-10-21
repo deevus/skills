@@ -97,7 +97,9 @@ Use these matches, in order:
    each tab's `jcode` process. Find it from the UI's shell pid with
    `pgrep -P <shell_pid> jcode`, then read `ps -o lstart= -p <pid>`. Processes
    that start in the same second cannot be separated this way.
-3. The tab title. Jcode sets it to the session's friendly name.
+3. The tab title. Jcode sets it to the session's friendly name. Use this match
+   first when the UI reports no shell pid (Orca), and read the title from the
+   UI's terminal list or terminal read.
 
 Identity comes only from these matches, never from launch order or the
 configured model. Session IDs can change while a tab starts, so read them again
