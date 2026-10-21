@@ -39,7 +39,8 @@ early:
   steps need it. Debug control is local session control, so enable it only with
   the user's authorization.
 - `jq` on `PATH`, for reading `servers.json` and `jcode debug` output.
-- At least one live Jcode daemon in `~/.jcode/servers.json`.
+- A live Jcode daemon to share: on Orca, the orchestrator's own pane daemon;
+  elsewhere, at least one live entry in `~/.jcode/servers.json`.
 
 ## Configure Jcode harnesses
 
@@ -85,8 +86,9 @@ printf '%s\n' "${JCODE_RUNTIME_DIR:?not an Orca Jcode pane}/jcode.sock"
 Pass that socket to every role so all of them join the orchestrator's daemon.
 The trade-off: the bench roles then run tool commands with the environment of
 the orchestrator's pane, and Orca shows their status under that pane. That is
-the cost of DMs between roles. If the orchestrator is not a Jcode pane in Orca,
-use the `servers.json` steps below.
+the cost of DMs between roles. The bench also depends on that daemon, so tell
+the user to keep the orchestrator's pane open while the bench runs. If the
+orchestrator is not a Jcode pane in Orca, use the `servers.json` steps below.
 
 ### Other UIs
 
