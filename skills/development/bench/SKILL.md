@@ -78,26 +78,32 @@ and viewer-specific brief text.
    earlier explicit Plan and Work selections on this rerun.
 8. Stop on resolver errors. Do not guess when configuration is malformed, an
    executable is missing, or a required choice is unresolved.
-9. If neither config file existed before the first resolver run and the final
-   resolver output has no `selection_required: true` value, read
-   [Bench onboarding](references/onboarding.md), then initialize configuration
-   before workspace creation. Say: "You need to set up a bench configuration.
-   Would you like it to be global or local?"
+9. Read the `family` of every resolved harness now, before onboarding or
+   workspace creation. If any harness needs a harness reference (see
+   [Route harness integrations](#route-harness-integrations)), read it and run
+   its prerequisite checks here. Stop on a failed prerequisite, so nothing is
+   created for a bench that cannot run. If onboarding later writes a new config,
+   repeat this step on the refreshed resolver output.
+10. If neither config file existed before the first resolver run and the final
+    resolver output has no `selection_required: true` value, read
+    [Bench onboarding](references/onboarding.md), then initialize configuration
+    before workspace creation. Say: "You need to set up a bench configuration.
+    Would you like it to be global or local?"
 
-   1. Global — create `$XDG_CONFIG_HOME/bench/config.toml`, falling back to
-      `~/.config/bench/config.toml`, for future repositories.
-   2. Local — create `<source-repo>/.bench/config.toml` for this repository
-      only.
+    1. Global — create `$XDG_CONFIG_HOME/bench/config.toml`, falling back to
+       `~/.config/bench/config.toml`, for future repositories.
+    2. Local — create `<source-repo>/.bench/config.toml` for this repository
+       only.
 
-   The selected scope is consent to create that file; do not ask a separate
-   Save-versus-Use-once question. Recheck the selected path immediately before
-   writing. If it now exists, stop and ask the user to reconcile it rather than
-   overwriting it.
+    The selected scope is consent to create that file; do not ask a separate
+    Save-versus-Use-once question. Recheck the selected path immediately before
+    writing. If it now exists, stop and ask the user to reconcile it rather than
+    overwriting it.
 
-10. If the resolver already returned a Plan harness, or the resolved Work
+11. If the resolver already returned a Plan harness, or the resolved Work
     harness has `tool: custom`, report the resolved configuration and continue
     without writing a starter config.
-11. Ask which workflow shape to initialize:
+12. Ask which workflow shape to initialize:
 
     1. Simple starter — one Work tab. Recommended.
     2. Advanced split — Plan tab plus Work tab.
@@ -105,10 +111,10 @@ and viewer-specific brief text.
     Explain that the advanced split is for users who want to try a separate
     planning harness and implementation harness.
 
-12. For the simple starter, write the starter config from
+13. For the simple starter, write the starter config from
     [Bench onboarding](references/onboarding.md) for the resolved Work harness
     and final Diff tool.
-13. For the advanced split, still offer split tabs when only one preset is
+14. For the advanced split, still offer split tabs when only one preset is
     installed. If the resolved Work harness has an `available` list with
     multiple presets, ask for Plan and Work harnesses from that list. If the
     resolver selected the sole installed preset and no choice list remains, say
@@ -117,26 +123,55 @@ and viewer-specific brief text.
     [Bench onboarding](references/onboarding.md). The Plan prompt must tell the
     Plan agent to write the approved Work prompt to a file that the human can
     provide to the Work tab.
-14. After writing the starter config, rerun the resolver with the same
+15. After writing the starter config, rerun the resolver with the same
     `--repo-root` and `--brief`, but omit the temporary explicit Plan, Work, and
     Diff selections used for first-run choices. Use the refreshed `harnesses`,
     legacy `harness`, and `diff` output for the brief and UI launch.
 
-Pass each returned harness tab's `argv` to the UI adapter unchanged. Each value
-is an argv list, not a shell command string. Keep the legacy `harness` object as
-the resolved Work harness for callers that have not moved to `harnesses`.
+Pass each returned harness tab's `argv` to the UI adapter unchanged, except for
+launch adjustments that the selected harness reference requires. For example,
+the Jcode reference adds `--socket <socket>` to every Jcode argv. Apply those
+adjustments before the UI launches the tabs, and pass the adjusted argv to the
+UI. Each value is an argv list, not a shell command string. Keep the legacy
+`harness` object as the resolved Work harness for callers that have not moved
+to `harnesses`.
+
+## Route harness integrations
+
+Each resolved harness has a `family`: the preset tool name, or the executable
+basename of a custom command. Use it to pick harness-specific guidance:
+
+- If any harness has `family: "jcode"`, read
+  [Bench Harness Jcode](references/harness-jcode.md) at step 9 of
+  [Resolve configuration](#resolve-configuration), before any workspace exists.
+  Run its prerequisites there. Later, it adds the shared daemon socket to each
+  Jcode argv before the UI launches the tabs, and it owns the Jcode handoff.
+- Otherwise do not read a harness reference.
+
+Harness, UI, and diff routing are independent. For example, a Supacode bench
+with Jcode harnesses reads both the Supacode and the Jcode references.
 
 ## Split-harness handoff
 
-When the resolver returns both Plan and Work harnesses, the bench uses a
-human-mediated handoff in version 1:
+When the resolver returns both Plan and Work harnesses, pick the handoff mode:
 
-1. Start Plan with its configured prompt.
-2. Start Work with its resolved argv. Work may have no prompt and can start as
-   an empty interactive agent.
-3. The Plan prompt should tell the Plan agent to write the plan, stop for
-   approval, and produce the exact prompt the human should paste into Work.
-4. Do not make bench or the UI adapter signal Work directly.
+- **Orchestrated**, when a harness reference supplies one. For Jcode benches,
+  the orchestrator delivers role instructions by agent messaging, Plan tells
+  Work when the user approves the plan, and no human paste is needed. Follow
+  the harness reference.
+- **Human-mediated**, in all other cases:
+  1. Start Plan with its configured prompt.
+  2. Start Work with its resolved argv. Work may have no prompt and can start
+     as an empty interactive agent.
+  3. The Plan prompt tells the Plan agent to write the plan, stop for approval,
+     and produce the exact prompt the human should paste into Work.
+  4. Do not make bench or the UI adapter signal Work directly.
+
+In both modes, Work starts implementation only after the user approves the
+plan. The UI adapter never signals Work. Read
+[Bench Approval Gate](references/approval-gate.md) to pick how the user approves
+the plan, with Plannotator or an explicit message, and record that gate in the
+brief.
 
 ## Create the native workspace
 
@@ -207,7 +242,9 @@ request, tracker, PR metadata, resolver output, and selected diff integration:
 - selected harness tabs, roles, titles, and argv values in readable form;
 - selected diff tool, or that no companion was requested;
 - companion command and viewer-specific instructions, if a companion exists;
-- for split harnesses, the Plan-to-Work paste handoff instruction; and
+- for split harnesses, the handoff mode and the approval gate: the Plan-to-Work
+  paste instruction, or the role identities and handoff section from the
+  harness reference; and
 - known constraints and open questions.
 
 A thin brief is correct when the ticket is thin. Put uncertainty in open
@@ -289,6 +326,7 @@ Before reporting success, confirm:
 - for manual native launch with a companion, the human confirmed starting the
   printed companion command;
 - the selected diff integration's verification passed when a companion exists;
+- the selected harness reference's readiness checks passed, if one was read;
 - the UI is focused back on Work when a UI is available; and
 - review benches have not pushed or mutated someone else's branch.
 

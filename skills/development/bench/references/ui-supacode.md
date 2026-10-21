@@ -161,6 +161,11 @@ supacode tab new -w <WT> --pane <PANE> --title <T>
 supacode tab focus -w <WT> -t <TAB>
 ```
 
+`<WT>` is Supacode's worktree ID: the absolute bench path with a trailing
+slash, or the same path percent-encoded. Take it from the sidecar's `worktree`
+output field, or from `supacode worktree list`. The bare path without the
+trailing slash fails with `Worktree not found`.
+
 `supacode surface` is deprecated. The sidecar does not use it. Bare
 `supacode tab list` or `supacode pane list` without `-w` proves nothing about
 the bench. It may show the current agent tab.

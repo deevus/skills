@@ -48,7 +48,7 @@ this reference. Treat the companion as a generic terminal command.
    the call fails and `orca repo list --json` does not include the source
    repository, run `orca repo add --path <source-repo> --json` once and retry.
    If it still fails, for example for a Jujutsu workspace that Orca does not
-   list, return to `bench` with the observed state for the native fallback.
+   list, use [Benches Orca does not list](#benches-orca-does-not-list).
 3. Run `orca terminal list --worktree path:<bench-path> --json`. A fresh
    checkout has no terminals. If `totalCount` is not 0, stop and return to
    `bench` with the observed state. Do not restructure a bench that may be in
@@ -86,24 +86,53 @@ this reference. Treat the companion as a generic terminal command.
 8. Focus Work: `orca terminal switch --terminal <work-handle> --json`.
 
 The default layout is Work plus optional companion. A split-harness layout is
-Plan, Work, and optional companion. In version 1, Plan produces the exact prompt
-that the human should paste into Work after plan approval. Do not use
-`orca terminal send` or `orca orchestration` commands to signal Work.
+Plan, Work, and optional companion. The core `bench` skill picks the handoff
+mode. Orca never signals Work: leave `orca terminal send` and
+`orca orchestration` out of the handoff.
+
+## Benches Orca does not list
+
+Orca lists only Git worktrees, so a Jujutsu workspace returns
+`selector_not_found` from `orca worktree show`. Host the bench tabs in the
+current Orca worktree instead, and keep the `cd <bench>` prefix so each command
+still runs in the bench:
+
+1. Skip steps 3 and 4. The current worktree already has your own terminal, and
+   its display name belongs to that worktree.
+2. Create each tab without `--worktree`, so Orca uses the current worktree:
+
+   ```bash
+   orca terminal create --title "<title>" \
+     --command "cd <shell-quoted-bench-path> && <shell-quoted argv>" --json
+   ```
+
+   Prefix each title with the short bench title, for example `ACCEPT-3 · Plan`,
+   so the bench tabs stand apart from other tabs.
+
+3. Continue at step 7.
+
+On this path, `worktreePath` is the current worktree, not the bench. Check the
+bench tabs by their recorded handles and titles, and take cwd evidence from the
+`cd <bench>` prefix plus a clean start in `orca terminal read`. Other terminals
+in the current worktree are expected; leave them alone.
 
 ## Readiness and safety checks
 
 Before reporting success:
 
 - confirm `orca terminal list --worktree path:<bench-path> --json` shows only
-  the harness tabs and optional companion, with the expected titles;
-- confirm each terminal's `worktreePath` is the bench path;
+  the harness tabs and optional companion, with the expected titles (for a bench
+  Orca does not list, find the recorded handles in `orca terminal list --json`
+  instead);
+- confirm each terminal's `worktreePath` is the bench path, except on the
+  unlisted-bench path above;
 - confirm each harness wait was satisfied, or each custom harness read showed a
   clean start;
 - if a companion exists, read its tab and confirm the command started;
 - confirm Work, Plan, and companion use separate tabs, not split panes;
 - confirm focus returned to Work; and
-- fail closed on missing tabs, an unlisted worktree, unexpected existing
-  terminals, or a half-specified companion.
+- fail closed on missing tabs, unexpected existing terminals in a listed bench
+  worktree, or a half-specified companion.
 
 Orca does not report shell pids. Report cwd evidence as the `worktreePath` match
 plus the `cd <bench>` prefix on each command, not as an `lsof` check.

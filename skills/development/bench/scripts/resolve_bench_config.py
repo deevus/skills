@@ -285,8 +285,15 @@ def render_prompt(config: HarnessConfig, *, brief: pathlib.Path) -> str | None:
     return None
 
 
-def with_role(result: dict[str, Any], *, role: str, title: str) -> dict[str, Any]:
-    return {"role": role, "title": title, **result}
+def with_role(
+    result: dict[str, Any], *, role: str, title: str, family: str | None
+) -> dict[str, Any]:
+    return {"role": role, "title": title, "family": family, **result}
+
+
+def command_family(argv: Sequence[str]) -> str:
+    """Name the harness family of a custom argv by its executable basename."""
+    return pathlib.PurePath(argv[0]).name
 
 
 def resolve_harness(
@@ -316,6 +323,7 @@ def resolve_harness(
             },
             role=role,
             title=title,
+            family=command_family(argv),
         )
 
     tool = config.tool or "ask"
@@ -334,6 +342,7 @@ def resolve_harness(
                 },
                 role=role,
                 title=title,
+                family=None,
             )
 
     if tool == "claude":
@@ -353,6 +362,7 @@ def resolve_harness(
             },
             role=role,
             title=title,
+            family="claude",
         )
 
     if tool == "codex":
@@ -371,6 +381,7 @@ def resolve_harness(
             },
             role=role,
             title=title,
+            family="codex",
         )
 
     if tool == "pi":
@@ -389,6 +400,7 @@ def resolve_harness(
             },
             role=role,
             title=title,
+            family="pi",
         )
 
     raise ConfigError(f"Unsupported harness.tool: {tool}")

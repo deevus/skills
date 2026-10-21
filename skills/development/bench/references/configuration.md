@@ -1,9 +1,10 @@
 # Bench configuration
 
 `bench` resolves harness and diff-viewer choices from layered TOML files plus
-explicit request flags. The resolver is the source of truth for final harness
-argv values and diff viewer choice. UI references must pass returned argv arrays
-without rebuilding them.
+explicit request flags. The resolver is the source of truth for harness argv
+values and diff viewer choice. A harness reference may add per-run launch
+arguments to that argv before the UI launch. UI references must pass the argv
+arrays they receive without rebuilding them.
 
 ## Resolver command
 
@@ -76,6 +77,9 @@ command = ["pi", "--model", "openai-codex/gpt-5.6-astra"]
 [diff]
 tool = "comview"
 ```
+
+Jcode harnesses use a custom command with no `prompt`. See
+[Bench Harness Jcode](harness-jcode.md) for the command shape.
 
 Defaults:
 
@@ -162,6 +166,10 @@ rendered prompt as the final argv item only when that harness role has a prompt.
 - `--diff-tool auto|comview|hunk|none` selects or overrides the diff viewer for
   this request.
 
+The resolver knows no harness-specific launch flags. A harness reference that
+needs per-run argv, such as the Jcode daemon socket, adds it to the resolved
+argv itself before the UI launches the tab.
+
 Explicit harness flags clear inherited `command` and `permission_mode` for their
 role. If the role did not exist, the flag creates it with the default prompt
 behavior.
@@ -183,11 +191,17 @@ must ask for Comview, Hunk, or None and rerun the resolver with `--diff-tool`.
 The resolver keeps the legacy `harness` object. It is the resolved Work harness.
 It also returns `harnesses`, the ordered list of first-class harness tabs.
 
+Each harness has a `family` for routing harness references: the preset tool
+name (`claude`, `codex`, or `pi`), the executable basename of a custom command
+(`jcode` for both `jcode` and `/usr/local/bin/jcode`), or `null` while a
+selection is required.
+
 ```json
 {
   "harness": {
     "role": "work",
     "title": "Work",
+    "family": "pi",
     "tool": "pi",
     "argv": ["pi", "@/tmp/bench-brief.md", "Read ..."],
     "available": ["claude", "codex", "pi"],
@@ -197,6 +211,7 @@ It also returns `harnesses`, the ordered list of first-class harness tabs.
     {
       "role": "plan",
       "title": "Plan",
+      "family": "claude",
       "tool": "claude",
       "argv": ["claude", "--permission-mode", "plan", "Read ..."],
       "available": ["claude", "codex", "pi"],
@@ -205,6 +220,7 @@ It also returns `harnesses`, the ordered list of first-class harness tabs.
     {
       "role": "work",
       "title": "Work",
+      "family": "pi",
       "tool": "custom",
       "argv": ["pi", "--model", "openai-codex/gpt-5.6-astra"],
       "available": ["claude", "codex", "pi"],
@@ -229,8 +245,11 @@ prompt only when one is configured.
 
 The first split-harness workflow is human-mediated. Plan starts with its
 configured prompt. Work can start with no prompt as an empty interactive agent.
-The Plan prompt should tell the Plan agent to write the plan, stop for approval,
-and then produce the exact prompt that the human should paste into Work.
+The Plan prompt tells the Plan agent to write the plan, stop for approval, and
+then produce the exact prompt that the human should paste into Work.
+
+A harness reference can replace that with an orchestrated handoff. Jcode
+benches do: see [Bench Harness Jcode](harness-jcode.md).
 
 ## Security boundary
 
