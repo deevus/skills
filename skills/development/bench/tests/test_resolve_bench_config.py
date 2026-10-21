@@ -97,6 +97,8 @@ class ResolveBenchConfigTests(unittest.TestCase):
                     "role": "work",
                     "title": "Work",
                     "family": None,
+                    "effort": None,
+                    "effort_applied": None,
                     "tool": None,
                     "argv": [],
                     "available": [],
@@ -107,6 +109,8 @@ class ResolveBenchConfigTests(unittest.TestCase):
                         "role": "work",
                         "title": "Work",
                         "family": None,
+                        "effort": None,
+                        "effort_applied": None,
                         "tool": None,
                         "argv": [],
                         "available": [],
@@ -151,6 +155,8 @@ class ResolveBenchConfigTests(unittest.TestCase):
                         "role": "work",
                         "title": "Work",
                         "family": tool,
+                        "effort": None,
+                        "effort_applied": None,
                         "tool": tool,
                         "argv": argv,
                         "available": [tool],
@@ -170,6 +176,8 @@ class ResolveBenchConfigTests(unittest.TestCase):
                 "role": "work",
                 "title": "Work",
                 "family": None,
+                "effort": None,
+                "effort_applied": None,
                 "tool": None,
                 "argv": [],
                 "available": ["claude", "codex", "pi"],
@@ -386,6 +394,8 @@ class ResolveBenchConfigTests(unittest.TestCase):
                 "role": "work",
                 "title": "Work",
                 "family": "codex",
+                "effort": None,
+                "effort_applied": None,
                 "tool": "codex",
                 "argv": ["codex", f"Read {self.brief}, then plan before edits."],
                 "available": ["codex"],
@@ -818,6 +828,174 @@ class ResolveBenchConfigTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             with mock.patch("sys.stderr"):
                 RESOLVER.parse_args(["--brief", "b.md", "--jcode-socket", "/x.sock"])
+
+    # Per-role reasoning effort.
+
+    def test_preset_effort_renders_launch_flag(self) -> None:
+        self.executables.update({"claude", "codex", "pi"})
+        prompt = f"Read {self.brief}, then plan before edits."
+        cases = {
+            "claude": [
+                "claude",
+                "--permission-mode",
+                "plan",
+                "--effort",
+                "high",
+                prompt,
+            ],
+            "codex": ["codex", "-c", 'model_reasoning_effort="high"', prompt],
+            "pi": ["pi", "--thinking", "high", f"@{self.brief}", prompt],
+        }
+        for tool, argv in cases.items():
+            with self.subTest(tool=tool):
+                self.write_user(
+                    f"""
+                    [harness]
+                    tool = "{tool}"
+                    effort = "high"
+                    """
+                )
+                result = self.resolve()
+                self.assertEqual(result["harness"]["argv"], argv)
+                self.assertEqual(result["harness"]["effort"], "high")
+                self.assertEqual(result["harness"]["effort_applied"], "argv")
+
+    def test_preset_effort_rejects_unsupported_level(self) -> None:
+        self.executables.update({"claude", "codex", "pi"})
+        for tool, level in [("claude", "minimal"), ("codex", "max"), ("pi", "ultra")]:
+            with self.subTest(tool=tool):
+                self.write_user(
+                    f"""
+                    [harness]
+                    tool = "{tool}"
+                    effort = "{level}"
+                    """
+                )
+                self.assert_config_error(f"Unsupported {tool} effort: {level}")
+
+    def test_custom_command_effort_is_reported_for_post_launch(self) -> None:
+        self.executables.add("jcode")
+        self.write_user(
+            """
+            [[harnesses]]
+            role = "plan"
+            command = ["jcode", "--cwd", "."]
+            effort = "high"
+
+            [[harnesses]]
+            role = "work"
+            command = ["jcode", "--cwd", "."]
+            effort = "medium"
+            """
+        )
+
+        result = self.resolve()
+
+        plan, work = result["harnesses"]
+        self.assertEqual(plan["argv"], ["jcode", "--cwd", "."])
+        self.assertEqual((plan["effort"], plan["effort_applied"]), ("high", "post_launch"))
+        self.assertEqual((work["effort"], work["effort_applied"]), ("medium", "post_launch"))
+
+    def test_no_effort_reports_nulls(self) -> None:
+        self.executables.add("claude")
+
+        result = self.resolve("--harness-tool", "claude")
+
+        self.assertIsNone(result["harness"]["effort"])
+        self.assertIsNone(result["harness"]["effort_applied"])
+        self.assertNotIn("--effort", result["harness"]["argv"])
+
+    def test_effort_survives_tool_change_across_layers_and_flags(self) -> None:
+        self.executables.update({"jcode", "claude", "pi"})
+        self.write_user(
+            """
+            [[harnesses]]
+            role = "work"
+            command = ["jcode", "--cwd", "."]
+            effort = "high"
+            """
+        )
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "work"
+            tool = "claude"
+            effort = "high"
+            """
+        )
+        with self.subTest(source="repo layer"):
+            result = self.resolve()
+            self.assertEqual(result["harness"]["argv"][3:5], ["--effort", "high"])
+        with self.subTest(source="--harness-tool"):
+            result = self.resolve("--harness-tool", "pi")
+            self.assertEqual(result["harness"]["argv"][1:3], ["--thinking", "high"])
+
+    def test_role_entry_without_effort_keeps_inherited_effort(self) -> None:
+        self.executables.update({"jcode", "claude"})
+        self.write_user(
+            """
+            [[harnesses]]
+            role = "work"
+            command = ["jcode", "--cwd", "."]
+            effort = "high"
+            """
+        )
+        self.write_repo(
+            """
+            [[harnesses]]
+            role = "work"
+            tool = "claude"
+            """
+        )
+
+        result = self.resolve()
+
+        self.assertEqual(result["harness"]["effort"], "high")
+
+    def test_disabled_role_rejects_effort(self) -> None:
+        self.write_user(
+            """
+            [[harnesses]]
+            role = "plan"
+            enabled = false
+            effort = "high"
+            """
+        )
+        self.assert_config_error("enabled = false cannot be combined")
+
+    def test_effort_must_be_a_non_empty_string(self) -> None:
+        self.executables.add("claude")
+        self.write_user(
+            """
+            [harness]
+            tool = "claude"
+            effort = ""
+            """
+        )
+        self.assert_config_error("harness.effort")
+
+    def test_effort_request_flags_override_config_per_role(self) -> None:
+        self.executables.update({"claude", "jcode"})
+        self.write_user(
+            """
+            [[harnesses]]
+            role = "plan"
+            command = ["jcode", "--cwd", "."]
+            effort = "high"
+
+            [[harnesses]]
+            role = "work"
+            tool = "claude"
+            effort = "low"
+            """
+        )
+
+        result = self.resolve("--plan-effort", "xhigh", "--effort", "medium")
+
+        plan, work = result["harnesses"]
+        self.assertEqual(plan["effort"], "xhigh")
+        self.assertEqual(work["effort"], "medium")
+        self.assertEqual(work["argv"][3:5], ["--effort", "medium"])
 
 if __name__ == "__main__":
     unittest.main()
