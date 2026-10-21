@@ -126,17 +126,38 @@ Pass each returned harness tab's `argv` to the UI adapter unchanged. Each value
 is an argv list, not a shell command string. Keep the legacy `harness` object as
 the resolved Work harness for callers that have not moved to `harnesses`.
 
+## Route harness integrations
+
+Each resolved harness has a `family`: the preset tool name, or the executable
+basename of a custom command. Use it to pick harness-specific guidance:
+
+- If any harness has `family: "jcode"`, read
+  [Bench Harness Jcode](references/harness-jcode.md) before you launch tabs. It
+  picks the shared daemon socket, which needs one more resolver run with
+  `--jcode-socket`, and it owns the Jcode handoff.
+- Otherwise do not read a harness reference.
+
+Harness, UI, and diff routing are independent. For example, a Supacode bench
+with Jcode harnesses reads both the Supacode and the Jcode references.
+
 ## Split-harness handoff
 
-When the resolver returns both Plan and Work harnesses, the bench uses a
-human-mediated handoff in version 1:
+When the resolver returns both Plan and Work harnesses, pick the handoff mode:
 
-1. Start Plan with its configured prompt.
-2. Start Work with its resolved argv. Work may have no prompt and can start as
-   an empty interactive agent.
-3. The Plan prompt should tell the Plan agent to write the plan, stop for
-   approval, and produce the exact prompt the human should paste into Work.
-4. Do not make bench or the UI adapter signal Work directly.
+- **Orchestrated**, when a harness reference supplies one. For Jcode benches,
+  the orchestrator delivers role instructions by agent messaging, Plan tells
+  Work when the user approves the plan, and no human paste is needed. Follow
+  the harness reference.
+- **Human-mediated**, in all other cases:
+  1. Start Plan with its configured prompt.
+  2. Start Work with its resolved argv. Work may have no prompt and can start
+     as an empty interactive agent.
+  3. The Plan prompt tells the Plan agent to write the plan, stop for approval,
+     and produce the exact prompt the human should paste into Work.
+  4. Do not make bench or the UI adapter signal Work directly.
+
+In both modes, Work starts implementation only after the user approves the
+plan. The UI adapter never signals Work.
 
 ## Create the native workspace
 
@@ -207,7 +228,8 @@ request, tracker, PR metadata, resolver output, and selected diff integration:
 - selected harness tabs, roles, titles, and argv values in readable form;
 - selected diff tool, or that no companion was requested;
 - companion command and viewer-specific instructions, if a companion exists;
-- for split harnesses, the Plan-to-Work paste handoff instruction; and
+- for split harnesses, the handoff mode: the Plan-to-Work paste instruction,
+  or the role identities and handoff section from the harness reference; and
 - known constraints and open questions.
 
 A thin brief is correct when the ticket is thin. Put uncertainty in open
@@ -289,6 +311,7 @@ Before reporting success, confirm:
 - for manual native launch with a companion, the human confirmed starting the
   printed companion command;
 - the selected diff integration's verification passed when a companion exists;
+- the selected harness reference's readiness checks passed, if one was read;
 - the UI is focused back on Work when a UI is available; and
 - review benches have not pushed or mutated someone else's branch.
 

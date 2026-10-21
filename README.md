@@ -32,8 +32,8 @@ Development skills capture reusable coding workflows.
 
 - `bench` — core orchestration for isolated task or review benches. It resolves
   configurable harness and diff choices, creates the workspace, routes terminal
-  setup, and reads on-demand references for Comview, Hunk, Supacode, Herdr, and
-  Orca integrations only when those branches are selected.
+  setup, and reads on-demand references for Comview, Hunk, Supacode, Herdr,
+  Orca, and Jcode integrations only when those branches are selected.
 
 ### Deevus
 

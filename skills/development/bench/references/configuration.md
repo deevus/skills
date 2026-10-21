@@ -18,9 +18,9 @@ python3 <bench-skill-dir>/scripts/resolve_bench_config.py \
 ```
 
 After a user choice, run the same command again with `--harness-tool`,
-`--plan-harness-tool`, and/or `--diff-tool`. Include all earlier explicit
-selections on every rerun, so a later Plan, Work, or Diff choice does not drop
-an earlier choice.
+`--plan-harness-tool`, `--diff-tool`, and/or `--jcode-socket`. Include all
+earlier explicit selections on every rerun, so a later Plan, Work, or Diff
+choice does not drop an earlier choice.
 
 ## Precedence
 
@@ -75,6 +75,21 @@ command = ["pi", "--model", "openai-codex/gpt-5.6-astra"]
 
 [diff]
 tool = "comview"
+```
+
+Jcode harnesses use a custom command with no `prompt`, because Jcode takes no
+startup prompt argument. See [Bench Harness Jcode](harness-jcode.md).
+
+```toml
+[[harnesses]]
+role = "plan"
+title = "Plan"
+command = ["jcode", "--cwd", ".", "--provider", "claude", "--model", "<model>"]
+
+[[harnesses]]
+role = "work"
+title = "Work"
+command = ["jcode", "--cwd", ".", "--provider", "claude", "--model", "<model>"]
 ```
 
 Defaults:
@@ -161,6 +176,11 @@ rendered prompt as the final argv item only when that harness role has a prompt.
   request.
 - `--diff-tool auto|comview|hunk|none` selects or overrides the diff viewer for
   this request.
+- `--jcode-socket PATH` puts every harness with `family: "jcode"` on one Jcode
+  daemon. The resolver inserts `--socket PATH` after the executable in each
+  Jcode argv and leaves other harnesses unchanged. `PATH` must be absolute and
+  must be a live Unix socket. A Jcode command that already sets `--socket` is
+  an error.
 
 Explicit harness flags clear inherited `command` and `permission_mode` for their
 role. If the role did not exist, the flag creates it with the default prompt
@@ -183,11 +203,17 @@ must ask for Comview, Hunk, or None and rerun the resolver with `--diff-tool`.
 The resolver keeps the legacy `harness` object. It is the resolved Work harness.
 It also returns `harnesses`, the ordered list of first-class harness tabs.
 
+Each harness has a `family` for routing harness references: the preset tool
+name (`claude`, `codex`, or `pi`), the executable basename of a custom command
+(`jcode` for both `jcode` and `/usr/local/bin/jcode`), or `null` while a
+selection is required.
+
 ```json
 {
   "harness": {
     "role": "work",
     "title": "Work",
+    "family": "pi",
     "tool": "pi",
     "argv": ["pi", "@/tmp/bench-brief.md", "Read ..."],
     "available": ["claude", "codex", "pi"],
@@ -197,6 +223,7 @@ It also returns `harnesses`, the ordered list of first-class harness tabs.
     {
       "role": "plan",
       "title": "Plan",
+      "family": "claude",
       "tool": "claude",
       "argv": ["claude", "--permission-mode", "plan", "Read ..."],
       "available": ["claude", "codex", "pi"],
@@ -205,6 +232,7 @@ It also returns `harnesses`, the ordered list of first-class harness tabs.
     {
       "role": "work",
       "title": "Work",
+      "family": "pi",
       "tool": "custom",
       "argv": ["pi", "--model", "openai-codex/gpt-5.6-astra"],
       "available": ["claude", "codex", "pi"],
@@ -232,6 +260,9 @@ configured prompt. Work can start with no prompt as an empty interactive agent.
 The Plan prompt should tell the Plan agent to write the plan, stop for approval,
 and then produce the exact prompt that the human should paste into Work.
 
+A harness reference can replace that with an orchestrated handoff. Jcode
+benches do: see [Bench Harness Jcode](harness-jcode.md).
+
 ## Security boundary
 
 The resolver returns argv lists, not shell strings. Callers must execute or pass
@@ -256,4 +287,6 @@ conflicting, including:
 - `tool` combined with `command` in one harness table;
 - `permission_mode` with Codex, Pi, Ask, or a custom command;
 - unsupported placeholders such as `{ticket}`;
-- missing executables for configured harnesses or explicit diff viewers.
+- missing executables for configured harnesses or explicit diff viewers;
+- a `--jcode-socket` path that is relative, missing, or not a socket; and
+- `--jcode-socket` with a Jcode command that already sets `--socket`.

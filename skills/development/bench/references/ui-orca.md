@@ -86,9 +86,9 @@ this reference. Treat the companion as a generic terminal command.
 8. Focus Work: `orca terminal switch --terminal <work-handle> --json`.
 
 The default layout is Work plus optional companion. A split-harness layout is
-Plan, Work, and optional companion. In version 1, Plan produces the exact prompt
-that the human should paste into Work after plan approval. Do not use
-`orca terminal send` or `orca orchestration` commands to signal Work.
+Plan, Work, and optional companion. The core `bench` skill picks the handoff
+mode. Orca never signals Work: leave `orca terminal send` and
+`orca orchestration` out of the handoff.
 
 ## Readiness and safety checks
 
