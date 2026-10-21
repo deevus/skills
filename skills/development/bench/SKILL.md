@@ -78,26 +78,32 @@ and viewer-specific brief text.
    earlier explicit Plan and Work selections on this rerun.
 8. Stop on resolver errors. Do not guess when configuration is malformed, an
    executable is missing, or a required choice is unresolved.
-9. If neither config file existed before the first resolver run and the final
-   resolver output has no `selection_required: true` value, read
-   [Bench onboarding](references/onboarding.md), then initialize configuration
-   before workspace creation. Say: "You need to set up a bench configuration.
-   Would you like it to be global or local?"
+9. Read the `family` of every resolved harness now, before onboarding or
+   workspace creation. If any harness needs a harness reference (see
+   [Route harness integrations](#route-harness-integrations)), read it and run
+   its prerequisite checks here. Stop on a failed prerequisite, so nothing is
+   created for a bench that cannot run. If onboarding later writes a new config,
+   repeat this step on the refreshed resolver output.
+10. If neither config file existed before the first resolver run and the final
+    resolver output has no `selection_required: true` value, read
+    [Bench onboarding](references/onboarding.md), then initialize configuration
+    before workspace creation. Say: "You need to set up a bench configuration.
+    Would you like it to be global or local?"
 
-   1. Global — create `$XDG_CONFIG_HOME/bench/config.toml`, falling back to
-      `~/.config/bench/config.toml`, for future repositories.
-   2. Local — create `<source-repo>/.bench/config.toml` for this repository
-      only.
+    1. Global — create `$XDG_CONFIG_HOME/bench/config.toml`, falling back to
+       `~/.config/bench/config.toml`, for future repositories.
+    2. Local — create `<source-repo>/.bench/config.toml` for this repository
+       only.
 
-   The selected scope is consent to create that file; do not ask a separate
-   Save-versus-Use-once question. Recheck the selected path immediately before
-   writing. If it now exists, stop and ask the user to reconcile it rather than
-   overwriting it.
+    The selected scope is consent to create that file; do not ask a separate
+    Save-versus-Use-once question. Recheck the selected path immediately before
+    writing. If it now exists, stop and ask the user to reconcile it rather than
+    overwriting it.
 
-10. If the resolver already returned a Plan harness, or the resolved Work
+11. If the resolver already returned a Plan harness, or the resolved Work
     harness has `tool: custom`, report the resolved configuration and continue
     without writing a starter config.
-11. Ask which workflow shape to initialize:
+12. Ask which workflow shape to initialize:
 
     1. Simple starter — one Work tab. Recommended.
     2. Advanced split — Plan tab plus Work tab.
@@ -105,10 +111,10 @@ and viewer-specific brief text.
     Explain that the advanced split is for users who want to try a separate
     planning harness and implementation harness.
 
-12. For the simple starter, write the starter config from
+13. For the simple starter, write the starter config from
     [Bench onboarding](references/onboarding.md) for the resolved Work harness
     and final Diff tool.
-13. For the advanced split, still offer split tabs when only one preset is
+14. For the advanced split, still offer split tabs when only one preset is
     installed. If the resolved Work harness has an `available` list with
     multiple presets, ask for Plan and Work harnesses from that list. If the
     resolver selected the sole installed preset and no choice list remains, say
@@ -117,7 +123,7 @@ and viewer-specific brief text.
     [Bench onboarding](references/onboarding.md). The Plan prompt must tell the
     Plan agent to write the approved Work prompt to a file that the human can
     provide to the Work tab.
-14. After writing the starter config, rerun the resolver with the same
+15. After writing the starter config, rerun the resolver with the same
     `--repo-root` and `--brief`, but omit the temporary explicit Plan, Work, and
     Diff selections used for first-run choices. Use the refreshed `harnesses`,
     legacy `harness`, and `diff` output for the brief and UI launch.
@@ -136,10 +142,10 @@ Each resolved harness has a `family`: the preset tool name, or the executable
 basename of a custom command. Use it to pick harness-specific guidance:
 
 - If any harness has `family: "jcode"`, read
-  [Bench Harness Jcode](references/harness-jcode.md) before you create the
-  workspace. It has prerequisites to check first, and it adds the shared daemon
-  socket to each Jcode argv before the UI launches the tabs. It also owns the
-  Jcode handoff.
+  [Bench Harness Jcode](references/harness-jcode.md) at step 9 of
+  [Resolve configuration](#resolve-configuration), before any workspace exists.
+  Run its prerequisites there. Later, it adds the shared daemon socket to each
+  Jcode argv before the UI launches the tabs, and it owns the Jcode handoff.
 - Otherwise do not read a harness reference.
 
 Harness, UI, and diff routing are independent. For example, a Supacode bench

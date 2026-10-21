@@ -1,10 +1,11 @@
 # Bench Harness Jcode
 
-Jcode harness mechanics for a bench. Read this reference only after the core
-`bench` workflow resolved at least one harness with `family: "jcode"`. The
-selected UI reference still owns tabs, panes, and focus. This reference owns the
-Jcode daemon, session identity, model and effort checks, and the orchestrated
-Plan-to-Work handoff.
+Jcode harness mechanics for a bench. The core `bench` workflow reads this
+reference right after the first resolver run (step 9 of "Resolve configuration")
+when any resolved harness has `family: "jcode"`, before any workspace exists.
+The selected UI reference still owns tabs, panes, and focus. This reference owns
+the Jcode daemon, session identity, model and effort checks, and the
+orchestrated Plan-to-Work handoff.
 
 ## Outcomes
 
@@ -32,8 +33,8 @@ for this bench. A Work-only bench runs the same approval gate inside Work.
 
 ## Prerequisites
 
-Check these before you create the workspace, so a missing one stops the bench
-early:
+Check these at step 9 of the core workflow, before onboarding writes config or
+anything creates the workspace, so a missing one stops the bench early:
 
 - `display.debug_socket = true` in `~/.jcode/config.toml`. The model and effort
   steps need it. Debug control is local session control, so enable it only with
