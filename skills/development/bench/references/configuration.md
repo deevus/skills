@@ -54,6 +54,9 @@ prompt = "Read {brief}, then plan before edits."
 
 [diff]
 tool = "auto" # auto | comview | hunk | none
+
+[ui]
+pinned = false # pin the bench in ADEs that support it
 ```
 
 Use `[[harnesses]]` only for advanced benches that need first-class harness tabs
@@ -194,6 +197,7 @@ rendered prompt as the final argv item only when that harness role has a prompt.
 - `--effort <level>` and `--plan-effort <level>` set or override the effort for
   Work and Plan for this request. They need that role to exist, and the same
   per-harness checks apply.
+- `--pinned` or `--no-pinned` overrides `ui.pinned` for this request.
 
 The resolver knows no harness-specific launch flags. A harness reference that
 needs per-run argv, such as the Jcode daemon socket, adds it to the resolved
@@ -214,6 +218,18 @@ behavior.
 
 The two-viewer `auto` case deliberately does not choose a winner. The core skill
 must ask for Comview, Hunk, or None and rerun the resolver with `--diff-tool`.
+
+## UI rules
+
+`[ui]` holds settings for the bench workspace itself, not for a role. It layers
+like `[diff]`: a higher layer overrides a lower one, and `--pinned` or
+`--no-pinned` overrides both for one run.
+
+- `pinned` (boolean, default `false`) asks the UI to pin the bench in its
+  sidebar. The resolver does not know which UI will run, so it does not check
+  support. Supacode and Orca pin. Herdr and native terminals report "pin not
+  supported" and continue. A repo `.bench/config.toml` can pin every bench for
+  one project.
 
 ## JSON output
 
@@ -274,6 +290,9 @@ Each harness also has `effort`, the configured level or `null`, and
     "tool": null,
     "available": ["comview", "hunk"],
     "selection_required": true
+  },
+  "ui": {
+    "pinned": false
   }
 }
 ```
@@ -306,7 +325,8 @@ cannot expand arbitrary environment variables or command substitutions.
 Resolution fails instead of guessing when configuration is malformed or
 conflicting, including:
 
-- unknown top-level, `[harness]`, `[[harnesses]]`, or `[diff]` keys;
+- unknown top-level, `[harness]`, `[[harnesses]]`, `[diff]`, or `[ui]` keys;
+- `[ui]` that is not a table, or a `pinned` value that is not a boolean;
 - unknown harness roles;
 - duplicate harness roles in one layer;
 - `[harness]` plus `[[harnesses]] role = "work"` in one layer;
