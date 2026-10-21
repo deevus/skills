@@ -896,6 +896,20 @@ class ResolveBenchConfigTests(unittest.TestCase):
         self.assertEqual((plan["effort"], plan["effort_applied"]), ("high", "post_launch"))
         self.assertEqual((work["effort"], work["effort_applied"]), ("medium", "post_launch"))
 
+    def test_custom_command_without_effort_handler_rejects_effort(self) -> None:
+        self.executables.update({"pi", "/opt/bin/pi"})
+        for command in ['["pi", "--model", "m"]', '["/opt/bin/pi"]']:
+            with self.subTest(command=command):
+                self.write_user(
+                    f"""
+                    [[harnesses]]
+                    role = "work"
+                    command = {command}
+                    effort = "high"
+                    """
+                )
+                self.assert_config_error("no harness reference applies effort for pi")
+
     def test_no_effort_reports_nulls(self) -> None:
         self.executables.add("claude")
 

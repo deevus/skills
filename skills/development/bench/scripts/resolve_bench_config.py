@@ -32,6 +32,9 @@ PRESET_EFFORTS = {
     "codex": ("minimal", "low", "medium", "high", "xhigh"),
     "pi": ("off", "minimal", "low", "medium", "high", "xhigh", "max"),
 }
+# Custom-command families whose harness reference applies effort after launch.
+# Keep in step with references/harness-*.md.
+POST_LAUNCH_EFFORT_FAMILIES = frozenset({"jcode"})
 
 
 class ConfigError(ValueError):
@@ -350,6 +353,13 @@ def resolve_harness(
             raise ConfigError("harness.permission_mode cannot be used with harness.command")
         argv = [render_template(arg, brief=brief) for arg in config.command]
         require_executable(argv[0], which)
+        family = command_family(argv)
+        if config.effort is not None and family not in POST_LAUNCH_EFFORT_FAMILIES:
+            raise ConfigError(
+                f"{role} harness sets effort, but no harness reference applies effort "
+                f"for {family} custom commands. Put the effort flag in command, or use "
+                "a preset tool."
+            )
         if prompt is not None:
             argv.append(prompt)
         return with_role(
@@ -361,7 +371,7 @@ def resolve_harness(
             },
             role=role,
             title=title,
-            family=command_family(argv),
+            family=family,
             effort=config.effort,
             effort_applied=None if config.effort is None else "post_launch",
         )

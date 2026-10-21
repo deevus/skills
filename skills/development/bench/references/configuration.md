@@ -93,13 +93,14 @@ role can have its own, for example `effort = "high"` on Plan and
 | `claude` | `--effort <level>` | low, medium, high, xhigh, max |
 | `codex` | `-c model_reasoning_effort="<level>"` | minimal, low, medium, high, xhigh |
 | `pi` | `--thinking <level>` | off, minimal, low, medium, high, xhigh, max |
-| custom `command` | nothing; reported as `post_launch` | not checked |
+| custom `command` | nothing; reported as `post_launch` | Jcode only; see below |
 
 For presets the resolver checks the level and puts the flag in the argv. For a
 custom command the resolver cannot know the flag, so it leaves the argv alone
-and reports the level. The matching harness reference applies it after launch.
-For Jcode that is `/effort <level>`, see
-[Bench Harness Jcode](harness-jcode.md).
+and reports the level. A harness reference then applies it after launch. Only
+Jcode has such a reference today, using `/effort <level>`: see
+[Bench Harness Jcode](harness-jcode.md). For any other custom command, `effort`
+is an error. Put that tool's own effort flag in `command` instead.
 
 Defaults:
 
@@ -228,8 +229,8 @@ Each harness also has `effort`, the configured level or `null`, and
 `effort_applied`:
 
 - `"argv"`: the resolver rendered it into the launch command;
-- `"post_launch"`: a custom command, so the harness reference must apply it
-  after launch;
+- `"post_launch"`: a Jcode custom command, so the Jcode harness reference applies
+  it after launch;
 - `null`: no effort is configured.
 
 ```json
@@ -316,7 +317,8 @@ conflicting, including:
 - unsupported tools or Claude permission modes;
 - `tool` combined with `command` in one harness table;
 - `permission_mode` with Codex, Pi, Ask, or a custom command;
-- an `effort` level the preset does not accept, or `--effort` or
-  `--plan-effort` for a role that is not configured;
+- an `effort` level the preset does not accept, `effort` on a custom command
+  with no harness reference that applies it (anything but Jcode), or `--effort`
+  or `--plan-effort` for a role that is not configured;
 - unsupported placeholders such as `{ticket}`;
 - missing executables for configured harnesses or explicit diff viewers.
