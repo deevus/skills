@@ -4,6 +4,8 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
+import socket
 import sys
 import tempfile
 import textwrap
@@ -96,6 +98,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
                 "harness": {
                     "role": "work",
                     "title": "Work",
+                    "family": None,
                     "tool": None,
                     "argv": [],
                     "available": [],
@@ -105,6 +108,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
                     {
                         "role": "work",
                         "title": "Work",
+                        "family": None,
                         "tool": None,
                         "argv": [],
                         "available": [],
@@ -148,6 +152,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
                     {
                         "role": "work",
                         "title": "Work",
+                        "family": tool,
                         "tool": tool,
                         "argv": argv,
                         "available": [tool],
@@ -166,6 +171,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
             {
                 "role": "work",
                 "title": "Work",
+                "family": None,
                 "tool": None,
                 "argv": [],
                 "available": ["claude", "codex", "pi"],
@@ -381,6 +387,7 @@ class ResolveBenchConfigTests(unittest.TestCase):
             {
                 "role": "work",
                 "title": "Work",
+                "family": "codex",
                 "tool": "codex",
                 "argv": ["codex", f"Read {self.brief}, then plan before edits."],
                 "available": ["codex"],
@@ -753,6 +760,114 @@ class ResolveBenchConfigTests(unittest.TestCase):
             result["diff"],
             {"tool": None, "available": ["comview", "hunk"], "selection_required": True},
         )
+
+    # Harness family routing and the shared Jcode daemon socket.
+
+    def make_socket(self) -> pathlib.Path:
+        # AF_UNIX paths are short on macOS, so bind outside the deep temp root.
+        directory = pathlib.Path(tempfile.mkdtemp(prefix="bj", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, directory, True)
+        path = directory / "jcode.sock"
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(server.close)
+        server.bind(str(path))
+        return path
+
+    def write_jcode_split(self, plan_command: str = '["jcode", "--cwd", "."]') -> None:
+        self.write_user(
+            f"""
+            [[harnesses]]
+            role = "plan"
+            command = {plan_command}
+
+            [[harnesses]]
+            role = "work"
+            command = ["jcode", "--cwd", "."]
+            """
+        )
+
+    def test_preset_harnesses_report_their_tool_as_family(self) -> None:
+        self.executables.update({"claude", "codex", "pi"})
+        for tool in ["claude", "codex", "pi"]:
+            with self.subTest(tool=tool):
+                result = self.resolve("--harness-tool", tool)
+                self.assertEqual(result["harness"]["family"], tool)
+                self.assertEqual(result["harnesses"][-1]["family"], tool)
+
+    def test_custom_jcode_command_reports_jcode_family(self) -> None:
+        self.executables.add("jcode")
+        self.write_jcode_split()
+
+        result = self.resolve()
+
+        self.assertEqual([item["family"] for item in result["harnesses"]], ["jcode", "jcode"])
+        self.assertEqual(result["harness"]["family"], "jcode")
+
+    def test_absolute_jcode_path_reports_jcode_family(self) -> None:
+        self.executables.update({"jcode", "/usr/local/bin/jcode"})
+        self.write_jcode_split('["/usr/local/bin/jcode", "--cwd", "."]')
+
+        result = self.resolve()
+
+        self.assertEqual(result["harnesses"][0]["family"], "jcode")
+
+    def test_ask_harness_reports_null_family(self) -> None:
+        result = self.resolve()
+
+        self.assertTrue(result["harness"]["selection_required"])
+        self.assertIsNone(result["harness"]["family"])
+
+    def test_jcode_socket_is_added_to_jcode_roles_only(self) -> None:
+        sock = self.make_socket()
+        self.executables.update({"jcode", "pi"})
+        self.write_user(
+            """
+            [[harnesses]]
+            role = "plan"
+            command = ["jcode", "--cwd", "."]
+
+            [[harnesses]]
+            role = "work"
+            tool = "pi"
+            """
+        )
+
+        result = self.resolve("--jcode-socket", str(sock))
+
+        plan, work = result["harnesses"]
+        self.assertEqual(plan["argv"], ["jcode", "--socket", str(sock), "--cwd", "."])
+        self.assertEqual(work["argv"][0], "pi")
+        self.assertNotIn("--socket", work["argv"])
+
+    def test_jcode_socket_conflicts_with_configured_socket(self) -> None:
+        sock = self.make_socket()
+        self.executables.add("jcode")
+        for configured in ['"--socket", "/other.sock"', '"--socket=/other.sock"']:
+            with self.subTest(configured=configured):
+                self.write_jcode_split(f'["jcode", {configured}, "--cwd", "."]')
+                self.assert_config_error(
+                    "already sets --socket", "--jcode-socket", str(sock)
+                )
+
+    def test_jcode_socket_must_be_an_absolute_existing_socket(self) -> None:
+        self.executables.add("jcode")
+        self.write_jcode_split()
+        regular_file = self.root / "not-a-socket"
+        regular_file.write_text("", encoding="utf-8")
+        for value in ["relative.sock", str(self.root / "missing.sock"), str(regular_file)]:
+            with self.subTest(value=value):
+                self.assert_config_error("--jcode-socket", "--jcode-socket", value)
+
+    def test_jcode_socket_survives_reruns_with_other_selections(self) -> None:
+        sock = self.make_socket()
+        self.executables.update({"jcode", "comview", "hunk"})
+        self.write_jcode_split()
+
+        result = self.resolve("--jcode-socket", str(sock), "--diff-tool", "comview")
+
+        self.assertEqual(result["diff"]["tool"], "comview")
+        for item in result["harnesses"]:
+            self.assertEqual(item["argv"][1:3], ["--socket", str(sock)])
 
 
 if __name__ == "__main__":

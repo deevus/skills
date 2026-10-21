@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import shutil
+import stat
 import string
 import sys
 import tomllib
@@ -285,8 +286,15 @@ def render_prompt(config: HarnessConfig, *, brief: pathlib.Path) -> str | None:
     return None
 
 
-def with_role(result: dict[str, Any], *, role: str, title: str) -> dict[str, Any]:
-    return {"role": role, "title": title, **result}
+def with_role(
+    result: dict[str, Any], *, role: str, title: str, family: str | None
+) -> dict[str, Any]:
+    return {"role": role, "title": title, "family": family, **result}
+
+
+def command_family(argv: Sequence[str]) -> str:
+    """Name the harness family of a custom argv by its executable basename."""
+    return pathlib.PurePath(argv[0]).name
 
 
 def resolve_harness(
@@ -316,6 +324,7 @@ def resolve_harness(
             },
             role=role,
             title=title,
+            family=command_family(argv),
         )
 
     tool = config.tool or "ask"
@@ -334,6 +343,7 @@ def resolve_harness(
                 },
                 role=role,
                 title=title,
+                family=None,
             )
 
     if tool == "claude":
@@ -353,6 +363,7 @@ def resolve_harness(
             },
             role=role,
             title=title,
+            family="claude",
         )
 
     if tool == "codex":
@@ -371,6 +382,7 @@ def resolve_harness(
             },
             role=role,
             title=title,
+            family="codex",
         )
 
     if tool == "pi":
@@ -389,6 +401,7 @@ def resolve_harness(
             },
             role=role,
             title=title,
+            family="pi",
         )
 
     raise ConfigError(f"Unsupported harness.tool: {tool}")
@@ -460,6 +473,33 @@ def resolved_harnesses(
     return resolved
 
 
+def require_jcode_socket(value: str) -> pathlib.Path:
+    path = pathlib.Path(value)
+    if not path.is_absolute():
+        raise ConfigError(f"--jcode-socket must be an absolute path: {value}")
+    try:
+        mode = path.stat().st_mode
+    except OSError as exc:
+        raise ConfigError(f"--jcode-socket does not exist: {value}") from exc
+    if not stat.S_ISSOCK(mode):
+        raise ConfigError(f"--jcode-socket is not a Unix socket: {value}")
+    return path
+
+
+def apply_jcode_socket(harnesses: list[dict[str, Any]], socket_path: pathlib.Path) -> None:
+    """Point every Jcode harness at one daemon, so the roles share a swarm."""
+    for harness in harnesses:
+        if harness["family"] != "jcode":
+            continue
+        argv = harness["argv"]
+        if any(arg == "--socket" or arg.startswith("--socket=") for arg in argv[1:]):
+            raise ConfigError(
+                f"{harness['role']} harness command already sets --socket; "
+                "remove it or omit --jcode-socket"
+            )
+        argv[1:1] = ["--socket", str(socket_path)]
+
+
 def resolve_config(
     *,
     repo_root: pathlib.Path,
@@ -467,9 +507,11 @@ def resolve_config(
     harness_tool: str | None = None,
     plan_harness_tool: str | None = None,
     diff_tool: str | None = None,
+    jcode_socket: str | None = None,
     which: Callable[[str], str | None] | None = None,
 ) -> dict[str, Any]:
     which = shutil.which if which is None else which
+    socket_path = None if jcode_socket is None else require_jcode_socket(jcode_socket)
     config = BenchConfig()
     for path in config_paths(repo_root):
         merge_config_file(config, path)
@@ -495,6 +537,8 @@ def resolve_config(
         config.diff.tool = diff_tool
 
     harnesses = resolved_harnesses(config, brief=brief, which=which)
+    if socket_path is not None:
+        apply_jcode_socket(harnesses, socket_path)
     work = next(item for item in harnesses if item["role"] == "work")
     return {
         "harness": work,
@@ -528,6 +572,10 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         choices=sorted(DIFF_TOOLS),
         help="explicit diff viewer selection for this request",
     )
+    parser.add_argument(
+        "--jcode-socket",
+        help="absolute Jcode daemon socket that every Jcode harness role must share",
+    )
     return parser.parse_args(argv)
 
 
@@ -539,6 +587,7 @@ def execute(argv: Sequence[str]) -> str:
         harness_tool=args.harness_tool,
         plan_harness_tool=args.plan_harness_tool,
         diff_tool=args.diff_tool,
+        jcode_socket=args.jcode_socket,
     )
     return json.dumps(resolved, indent=2, sort_keys=True) + "\n"
 
