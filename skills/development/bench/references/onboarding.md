@@ -113,15 +113,15 @@ If multiple presets are installed, ask for the Plan harness and the Work harness
 from the installed presets. If only one preset is installed, tell the user only
 one harness is available and use it for both tabs unless they cancel.
 
-The Plan harness gets a prompt. It must read the brief, write a plan, stop for
-approval, and write the final Work prompt to a file. The human can then provide
-that file to the Work tab after approving the plan. The Work harness starts
-without a prompt.
+The Plan harness gets the same prompt for every agent pairing. It prepares
+the plan and Work prompt, then follows the shared [handoff](handoff.md).
+The human approves once; Plan delivers to the Work target recorded in the
+brief. The Work harness starts without a prompt.
 
 Use this Plan prompt:
 
 ```text
-Read {brief}, then write a plan before edits. When the plan is ready, stop and wait for approval. Write the final Work prompt to a file next to the brief so the human can provide it to the Work agent after approving the plan.
+Read {brief} and plan the work for a separate Work agent. Write the plan and what Work needs to start to {brief}.work.md. Present the plan and follow the brief's Handoff instructions: ask once for approval to hand over, then deliver on yes. Re-read the brief before delivery for the verified Work target. Leave implementation to Work.
 ```
 
 A split config with Claude for Plan and Pi for Work looks like this:
@@ -131,7 +131,7 @@ A split config with Claude for Plan and Pi for Work looks like this:
 role = "plan"
 title = "Plan"
 command = ["claude", "--model", "claude-opus-5-5", "--permission-mode", "plan"]
-prompt = "Read {brief}, then write a plan before edits. When the plan is ready, stop and wait for approval. Write the final Work prompt to a file next to the brief so the human can provide it to the Work agent after approving the plan."
+prompt = "Read {brief} and plan the work for a separate Work agent. Write the plan and what Work needs to start to {brief}.work.md. Present the plan and follow the brief's Handoff instructions: ask once for approval to hand over, then deliver on yes. Re-read the brief before delivery for the verified Work target. Leave implementation to Work."
 
 [[harnesses]]
 role = "work"
@@ -142,32 +142,13 @@ tool = "pi"
 tool = "auto"
 ```
 
-For other harness choices, use the selected harness's simple starter command or
-tool. Keep the Plan prompt. Omit the Work prompt so Work starts empty.
-
-## Claude-to-Claude handoff
-
-When both Plan and Work resolve to `family: "claude"`, replace the generic Plan
-prompt above with this ask-then-send prompt. It requires approval of the plan
-and a separate yes before Plan sends anything to Work.
-
-```toml
-prompt = '''Read {brief} and plan the work. A separate Work agent in another tab will implement the plan, so do not implement anything in this session. When the plan is approved, write the Work prompt, the approved plan plus what the Work agent needs to start, to {brief}.work.md. Then ask the human one yes/no question: "Do you want me to pass this on to the Work agent?" On yes, find the Work tab with ListAgents. It is the other Claude session whose cwd is this worktree; confirm it by name and cwd in ~/.claude/sessions/*.json. Send it one message with SendMessage: "Read {brief}.work.md and follow it. Plan sent this at the human's request after they approved the plan." Then say it was sent. On no, or if there is not exactly one Work session, stop and tell the human to give the file to the Work tab.'''
-```
-
-Work still starts without a prompt. Keep its configured argv and permission
-mode. If Work is in `--permission-mode plan` and Plan is in a different mode
-after approval, Work holds the incoming message until the human approves it
-there. The handoff therefore still needs one click in Work. For a single yes,
-configure Work to start in the mode Plan will use after approval; this also
-removes Work's separate plan-mode approval step.
-
-For this handoff, use these lines in the brief:
-
-```text
-Harness: Claude Plan + Claude Work; Plan asks, then sends the Work prompt.
-Tabs: Plan + Work; Plan asks, then sends the Work prompt.
-```
+For other harness choices, use the selected harness's command or tool. Keep
+the generic Plan prompt and omit the Work prompt. Start Work in its normal
+implementation mode so it can act on the approved plan. For the Claude preset,
+set `permission_mode = "manual"`; for a Claude custom command, use
+`--permission-mode manual`. Keep Plan in plan mode. Preserve existing explicit
+permissions; if Work is configured as plan-only, report the extra approval
+instead of silently changing it.
 
 ## Diff companion recommendation
 

@@ -305,17 +305,17 @@ prompt only when one is configured.
 
 ## Advanced split-harness handoff
 
-When Plan and Work both have `family: "claude"`, use the
-[Claude-to-Claude handoff](onboarding.md#claude-to-claude-handoff) prompt and
-brief wording. Plan writes the approved Work prompt to `{brief}.work.md`, asks
-the human, and sends it only on yes to exactly one verified Work session.
-Existing configs need their Plan prompt updated to opt in; the resolver does
-not rewrite configured prompts or permission modes.
+Use the shared [handoff](handoff.md) for any Plan and Work agent pairing.
+Plan prepares `{brief}.work.md` and asks once for approval to hand over.
+On yes, it sends the prompt through the verified host delivery route recorded
+in the brief. The route targets Work's terminal, so it does not depend on the
+agents sharing a messaging API. Without a route, report a manual handoff.
 
-Other split-harness workflows are human-mediated. Plan starts with its
-configured prompt. Work can start with no prompt as an empty interactive agent.
-The Plan prompt tells the Plan agent to write the plan, stop for approval, and
-then produce the exact prompt that the human should paste into Work.
+Use the generic Plan prompt in [onboarding](onboarding.md#advanced-split-configuration).
+Existing configurations need their Plan prompt updated to use it. The resolver
+does not rewrite configured prompts or permission modes. Start Work without a
+prompt, in its normal implementation mode; a plan-only Work mode requires
+another approval before implementation.
 
 A harness reference can replace that with an orchestrated handoff. Jcode
 benches do: see [Bench Harness Jcode](harness-jcode.md).

@@ -121,9 +121,8 @@ and viewer-specific brief text.
     only one preset is installed and use that preset for both Plan and Work
     unless the user cancels. Write the split starter config from
     [Bench onboarding](references/onboarding.md). The Plan prompt must tell the
-    Plan agent to write the approved Work prompt to a file. When both roles
-    use Claude, use the ask-then-send prompt from onboarding; otherwise the
-    human provides the file to Work.
+    Plan agent to follow the shared [handoff](references/handoff.md): prepare
+    the Work prompt, ask for approval, and deliver it on yes.
 15. After writing the starter config, rerun the resolver with the same
     `--repo-root` and `--brief`, but omit the temporary explicit Plan, Work, and
     Diff selections used for first-run choices. Use the refreshed `harnesses`,
@@ -160,21 +159,15 @@ When the resolver returns both Plan and Work harnesses, pick the handoff mode:
   the orchestrator delivers role instructions by agent messaging, Plan tells
   Work when the user approves the plan, and no human paste is needed. Follow
   the harness reference.
-- **Ask-then-send**, when both harnesses have `family: "claude"` and the Plan
-  prompt opts in. Use the
-  [Claude-to-Claude handoff](references/onboarding.md#claude-to-claude-handoff)
-  prompt and brief wording. After plan approval, Plan asks the human before
-  sending the Work prompt to the verified Work session.
-- **Human-mediated**, in all other cases:
-  1. Start Plan with its configured prompt.
-  2. Start Work with its resolved argv. Work may have no prompt and can start
-     as an empty interactive agent.
-  3. The Plan prompt tells the Plan agent to write the plan, stop for approval,
-     and produce the exact prompt the human should paste into Work.
-  4. Do not make bench or the UI adapter signal Work directly.
+- **Approve-and-handoff**, for any other agent pairing when the host exposes
+  terminal input. Read [Bench handoff](references/handoff.md). Record the
+  verified Work target and delivery instructions in the brief after UI setup.
+  Plan asks once; approval authorizes sending the prepared Work prompt.
+- **Manual**, when no verified delivery route is available. Plan writes the
+  Work prompt and gives the human its path and the text to paste into Work.
 
 In all modes, Work starts implementation only after the user approves the
-plan. The UI adapter never signals Work. Read
+plan. Setup records the route; Plan delivers only after approval. Read
 [Bench Approval Gate](references/approval-gate.md) to pick how the user approves
 the plan, with Plannotator or an explicit message, and record that gate in the
 brief.
@@ -250,9 +243,9 @@ request, tracker, PR metadata, resolver output, and selected diff integration:
   harness reference, or none (model default);
 - selected diff tool, or that no companion was requested;
 - companion command and viewer-specific instructions, if a companion exists;
-- for split harnesses, the handoff mode and the approval gate: the Plan-to-Work
-  paste instruction, the Claude ask-then-send wording from onboarding, or the
-  role identities and handoff section from the harness reference; and
+- for split harnesses, the handoff mode and approval gate; include the shared
+  [handoff instructions](references/handoff.md), then fill in the Work target
+  and delivery route after UI setup, or the harness reference's handoff; and
 - known constraints and open questions.
 
 A thin brief is correct when the ticket is thin. Put uncertainty in open
@@ -329,6 +322,8 @@ Before reporting success, confirm:
 - the workspace root and VCS metadata are correct;
 - the environment setup completed;
 - the handoff brief exists outside the workspace;
+- for split harnesses, the brief records a verified Work target and delivery
+  route, or explicitly says the handoff is manual;
 - for Herdr, Orca, Supacode, and auto-opened native tabs, each harness process
   or session is running from the bench root;
 - for manual native launch, the human confirmed starting each printed command,

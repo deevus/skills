@@ -47,8 +47,11 @@ this reference. Treat the companion as a generic terminal command.
 11. Focus back to Work.
 
 The default layout is Work plus optional companion. A split-harness layout is
-Plan, Work, and optional companion. The core `bench` skill picks the handoff
-mode. Herdr never signals Work directly.
+Plan, Work, and optional companion. For split harnesses, record the exact Work
+target in the brief. If the available Herdr tools expose terminal read and
+input, record their concrete calls and result checks for [Bench handoff](handoff.md).
+Otherwise mark the handoff manual. Setup never starts Work's task; Plan
+delivers after approval.
 
 Use project-specific title or color conventions only when `bench` passes them in
 or the project topic requires them.

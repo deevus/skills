@@ -165,7 +165,7 @@ Then confirm every Jcode role session is on the shared daemon. Non-Jcode roles
 run outside Jcode, so leave them out of this check. With a Jcode orchestrator
 (orchestrated handoff), call `swarm` with `action=list_swarms`: each Jcode role
 session must appear in the list. If one is missing, it is on another daemon:
-stop, because a DM cannot reach it. Otherwise (human-mediated handoff),
+stop, because a DM cannot reach it. Otherwise (non-orchestrated handoff),
 `clients:map` on the shared socket must list every Jcode role session.
 
 Record, for each role: role, friendly name, session ID, swarm ID, tab handle,
@@ -241,7 +241,8 @@ agent-driven, even when the user asks for a paste.
 
 The orchestrated handoff needs a Jcode orchestrator on the shared daemon,
 because it uses the `swarm` tool. When the orchestrator is not Jcode, or a role
-is not Jcode, use the core skill's human-mediated handoff.
+is not Jcode, use the core skill's shared handoff through the host, or a manual
+handoff when no delivery route is available.
 
 ### Placeholders
 
@@ -352,7 +353,7 @@ Add these to the core final verification:
 - every Jcode argv launched with the same `--socket`, and `server:info` answered
   on it;
 - every Jcode role session is on the shared daemon: in `list_swarms` for the
-  orchestrated handoff, in `clients:map` for the human-mediated handoff;
+  orchestrated handoff, in `clients:map` for a non-orchestrated handoff;
 - the brief records each role's identity;
 - each role's model and effort were verified before its DM, with any rejected
   `/effort` recorded as model default;

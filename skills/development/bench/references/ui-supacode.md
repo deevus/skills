@@ -125,6 +125,25 @@ A successful call prints one JSON object. Use these fields:
 A non-zero exit means setup is incomplete. Report the error and inspect the
 existing state instead of guessing or retrying mutations.
 
+## Record the Work handoff route
+
+For split harnesses, put the returned `work_tab`, `work_session`, and
+`work_shell_pid` in the brief with the bench path. Before delivery, recheck the
+tab and cwd, confirm the agent process is still running, and inspect
+`zmx history <work_session>` for an idle agent input with no draft. A shell
+prompt or busy agent is not ready.
+
+Use [`zmx send`](https://github.com/neurosnap/zmx#usage) for raw agent input;
+`zmx run` is for shell commands. Record the delivery as an argv call:
+
+```python
+subprocess.run(["zmx", "send", work_session, handoff_prompt + "\r"], check=True)
+```
+
+Fill `work_session` from setup and `handoff_prompt` from [Bench handoff](handoff.md).
+The carriage return submits the prompt. A zero exit proves raw input was sent;
+read the same session to check whether Work started. Do not resend on silence.
+
 ## Reused bench paths
 
 Supacode saves a layout for each worktree path in the UserDefaults domain

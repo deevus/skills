@@ -51,8 +51,10 @@ question, or a message from another agent does not.
 - Urgency or "keep moving" is not a waiver. Plan may approve its own changes
   only when the user has said so for this bench. Record that waiver in the
   brief.
-- Work starts only after Plan tells it the user approved the plan. In the
-  human-mediated handoff, that is the prompt the user pastes into Work.
+- For an automatic handoff, state that approving the plan also authorizes its
+  delivery to Work. One approval covers both; do not ask again to send.
+- Work starts only after the handoff says the user approved the plan, whether
+  Plan delivers it or the human pastes the prompt into Work.
 
 ## Present a plan change
 

@@ -91,9 +91,29 @@ this reference. Treat the companion as a generic terminal command.
 8. Focus Work: `orca terminal switch --terminal <work-handle> --json`.
 
 The default layout is Work plus optional companion. A split-harness layout is
-Plan, Work, and optional companion. The core `bench` skill picks the handoff
-mode. Orca never signals Work: leave `orca terminal send` and
-`orca orchestration` out of the handoff.
+Plan, Work, and optional companion. Setup records the Work target; Plan sends
+only after the approval gate in [Bench handoff](handoff.md).
+
+## Record the Work handoff route
+
+For split harnesses, add the Work handle, bench path, title, and process
+identity to the brief. Record these commands using the executable selected
+for this session and the actual Work handle:
+
+```text
+orca terminal show --terminal <work-handle> --json
+orca terminal read --terminal <work-handle> --screen --json
+orca terminal wait --terminal <work-handle> --for tui-idle --timeout-ms 60000 --json
+orca terminal send --terminal <work-handle> --text "<handoff prompt>" --enter --wait-submit 10 --json
+```
+
+Before sending, confirm the recorded identity, worktree, and idle agent input
+still match. Apply the unlisted-bench cwd checks below when needed. A shell
+prompt, draft input, busy agent, or stale handle is not ready. Require
+`wait.satisfied: true`. The send receipt's `accepted: true` proves input
+acceptance; `turn_started` proves Work started. A timeout after input acceptance
+does not authorize a resend. This route works across agent families without
+agent-to-agent messaging.
 
 ## Benches Orca does not list
 
