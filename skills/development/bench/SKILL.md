@@ -121,8 +121,9 @@ and viewer-specific brief text.
     only one preset is installed and use that preset for both Plan and Work
     unless the user cancels. Write the split starter config from
     [Bench onboarding](references/onboarding.md). The Plan prompt must tell the
-    Plan agent to write the approved Work prompt to a file that the human can
-    provide to the Work tab.
+    Plan agent to write the approved Work prompt to a file. When both roles
+    use Claude, use the ask-then-send prompt from onboarding; otherwise the
+    human provides the file to Work.
 15. After writing the starter config, rerun the resolver with the same
     `--repo-root` and `--brief`, but omit the temporary explicit Plan, Work, and
     Diff selections used for first-run choices. Use the refreshed `harnesses`,
@@ -159,6 +160,11 @@ When the resolver returns both Plan and Work harnesses, pick the handoff mode:
   the orchestrator delivers role instructions by agent messaging, Plan tells
   Work when the user approves the plan, and no human paste is needed. Follow
   the harness reference.
+- **Ask-then-send**, when both harnesses have `family: "claude"` and the Plan
+  prompt opts in. Use the
+  [Claude-to-Claude handoff](references/onboarding.md#claude-to-claude-handoff)
+  prompt and brief wording. After plan approval, Plan asks the human before
+  sending the Work prompt to the verified Work session.
 - **Human-mediated**, in all other cases:
   1. Start Plan with its configured prompt.
   2. Start Work with its resolved argv. Work may have no prompt and can start
@@ -167,7 +173,7 @@ When the resolver returns both Plan and Work harnesses, pick the handoff mode:
      and produce the exact prompt the human should paste into Work.
   4. Do not make bench or the UI adapter signal Work directly.
 
-In both modes, Work starts implementation only after the user approves the
+In all modes, Work starts implementation only after the user approves the
 plan. The UI adapter never signals Work. Read
 [Bench Approval Gate](references/approval-gate.md) to pick how the user approves
 the plan, with Plannotator or an explicit message, and record that gate in the
@@ -245,8 +251,8 @@ request, tracker, PR metadata, resolver output, and selected diff integration:
 - selected diff tool, or that no companion was requested;
 - companion command and viewer-specific instructions, if a companion exists;
 - for split harnesses, the handoff mode and the approval gate: the Plan-to-Work
-  paste instruction, or the role identities and handoff section from the
-  harness reference; and
+  paste instruction, the Claude ask-then-send wording from onboarding, or the
+  role identities and handoff section from the harness reference; and
 - known constraints and open questions.
 
 A thin brief is correct when the ticket is thin. Put uncertainty in open

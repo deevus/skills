@@ -305,7 +305,14 @@ prompt only when one is configured.
 
 ## Advanced split-harness handoff
 
-The first split-harness workflow is human-mediated. Plan starts with its
+When Plan and Work both have `family: "claude"`, use the
+[Claude-to-Claude handoff](onboarding.md#claude-to-claude-handoff) prompt and
+brief wording. Plan writes the approved Work prompt to `{brief}.work.md`, asks
+the human, and sends it only on yes to exactly one verified Work session.
+Existing configs need their Plan prompt updated to opt in; the resolver does
+not rewrite configured prompts or permission modes.
+
+Other split-harness workflows are human-mediated. Plan starts with its
 configured prompt. Work can start with no prompt as an empty interactive agent.
 The Plan prompt tells the Plan agent to write the plan, stop for approval, and
 then produce the exact prompt that the human should paste into Work.

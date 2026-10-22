@@ -145,6 +145,30 @@ tool = "auto"
 For other harness choices, use the selected harness's simple starter command or
 tool. Keep the Plan prompt. Omit the Work prompt so Work starts empty.
 
+## Claude-to-Claude handoff
+
+When both Plan and Work resolve to `family: "claude"`, replace the generic Plan
+prompt above with this ask-then-send prompt. It requires approval of the plan
+and a separate yes before Plan sends anything to Work.
+
+```toml
+prompt = '''Read {brief} and plan the work. A separate Work agent in another tab will implement the plan, so do not implement anything in this session. When the plan is approved, write the Work prompt, the approved plan plus what the Work agent needs to start, to {brief}.work.md. Then ask the human one yes/no question: "Do you want me to pass this on to the Work agent?" On yes, find the Work tab with ListAgents. It is the other Claude session whose cwd is this worktree; confirm it by name and cwd in ~/.claude/sessions/*.json. Send it one message with SendMessage: "Read {brief}.work.md and follow it. Plan sent this at the human's request after they approved the plan." Then say it was sent. On no, or if there is not exactly one Work session, stop and tell the human to give the file to the Work tab.'''
+```
+
+Work still starts without a prompt. Keep its configured argv and permission
+mode. If Work is in `--permission-mode plan` and Plan is in a different mode
+after approval, Work holds the incoming message until the human approves it
+there. The handoff therefore still needs one click in Work. For a single yes,
+configure Work to start in the mode Plan will use after approval; this also
+removes Work's separate plan-mode approval step.
+
+For this handoff, use these lines in the brief:
+
+```text
+Harness: Claude Plan + Claude Work; Plan asks, then sends the Work prompt.
+Tabs: Plan + Work; Plan asks, then sends the Work prompt.
+```
+
 ## Diff companion recommendation
 
 When no diff viewer is installed, recommend installing Hunk from
